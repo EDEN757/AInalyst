@@ -5,7 +5,7 @@ A Retrieval-Augmented Generation (RAG) chatbot that enables users to query infor
 ## Project Structure
 
 ```
-sp500_rag_chatbot/
+AInalyst/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
