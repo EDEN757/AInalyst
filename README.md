@@ -1,4 +1,4 @@
-# S&P 500 10-K RAG Chatbot
+# AInalyst
 
 A Retrieval-Augmented Generation (RAG) chatbot that enables users to query information from the 10-K filings of S&P 500 companies using natural language.
 
