@@ -54,8 +54,8 @@ AInalyst/
 │   └── init.sql                    # pgvector extension setup
 ├── .env.example                    # Example environment variables
 ├── docker-compose.yml              # Container orchestration
-├── .gitignore
-└── README.md
+├── LICENSE                         # MIT License
+└── README.md                       # This file
 ```
 
 ## Architecture Overview
@@ -224,6 +224,101 @@ docker-compose exec backend python /app/data_updater/update_job.py --skip-embedd
    ```
 
 2. No database schema changes are needed when switching chat providers
+
+## Deployment on a Linux Server via SSH
+
+### Prerequisites
+- Linux server with SSH access
+- Docker and Docker Compose installed on the server
+- Git installed on the server
+
+### Deployment Steps
+
+1. **SSH into your server**:
+   ```bash
+   ssh username@your-server-ip
+   ```
+
+2. **Clone the repository**:
+   ```bash
+   git clone https://github.com/yourusername/AInalyst.git
+   cd AInalyst
+   ```
+
+3. **Configure environment variables**:
+   ```bash
+   cp .env.example .env
+   nano .env  # Edit the file with your API keys and configuration
+   ```
+
+4. **Build and start the Docker containers**:
+   ```bash
+   docker-compose up -d --build
+   ```
+
+5. **Initialize the database and load data**:
+   ```bash
+   docker-compose exec backend python /app/data_updater/update_job.py
+   ```
+
+6. **Configure firewall (if needed)**:
+   Make sure ports 3000 (frontend) and 8000 (backend) are accessible:
+   ```bash
+   sudo ufw allow 3000
+   sudo ufw allow 8000
+   ```
+
+7. **Access the application**:
+   - Frontend: `http://your-server-ip:3000`
+   - Backend API: `http://your-server-ip:8000`
+   - API Docs: `http://your-server-ip:8000/docs`
+
+### Production Considerations
+
+For a production deployment, consider the following additional steps:
+
+1. **Set up a reverse proxy (Nginx or Traefik)** to handle SSL termination and route traffic.
+
+2. **Configure domain names** instead of using IP addresses:
+   ```nginx
+   # Example Nginx configuration
+   server {
+       listen 80;
+       server_name chat.yourdomain.com;
+       
+       location / {
+           proxy_pass http://localhost:3000;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+       }
+   }
+   
+   server {
+       listen 80;
+       server_name api.yourdomain.com;
+       
+       location / {
+           proxy_pass http://localhost:8000;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+       }
+   }
+   ```
+
+3. **Set up SSL certificates** using Let's Encrypt:
+   ```bash
+   sudo certbot --nginx -d chat.yourdomain.com -d api.yourdomain.com
+   ```
+
+4. **Set up container monitoring** with tools like Portainer or Prometheus + Grafana.
+
+5. **Configure automatic backups** for the PostgreSQL database:
+   ```bash
+   # Add a cron job for daily backups
+   crontab -e
+   # Add this line:
+   0 2 * * * docker exec sp500_rag_db pg_dump -U postgres sp500_db > /path/to/backups/sp500_backup_$(date +\%Y\%m\%d).sql
+   ```
 
 ## License
 
