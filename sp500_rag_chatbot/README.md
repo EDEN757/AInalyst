@@ -2,6 +2,62 @@
 
 A Retrieval-Augmented Generation (RAG) chatbot that enables users to query information from the 10-K filings of S&P 500 companies using natural language.
 
+## Project Structure
+
+```
+sp500_rag_chatbot/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── __init__.py
+│   │   │   ├── chat.py             # Chat endpoint for RAG interactions
+│   │   │   └── companies.py        # Endpoints for company data
+│   │   ├── core/
+│   │   │   ├── __init__.py
+│   │   │   └── config.py           # Configuration with Embed/Chat separation
+│   │   ├── db/
+│   │   │   ├── __init__.py
+│   │   │   ├── crud.py             # Database operations
+│   │   │   └── database.py         # Database connection setup
+│   │   ├── models/
+│   │   │   ├── __init__.py
+│   │   │   ├── chat_models.py      # Pydantic models for the API
+│   │   │   └── database_models.py  # SQLAlchemy database models
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── llm_clients.py      # LLM provider integrations
+│   │   │   └── rag_service.py      # Core RAG implementation
+│   │   ├── __init__.py
+│   │   └── main.py                 # FastAPI application
+│   ├── data_updater/
+│   │   ├── __init__.py
+│   │   ├── create_embeddings.py    # Uses ONLY Embedding config
+│   │   ├── fetch_sec.py            # Fetches SEC filings
+│   │   ├── process_docs.py         # Processes filings into chunks
+│   │   └── update_job.py           # Main update pipeline
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── ChatMessage.js      # Chat message component
+│   │   │   └── CompanySelect.js    # Company dropdown component
+│   │   ├── App.css
+│   │   ├── App.js                  # Main React application
+│   │   ├── index.css
+│   │   └── index.js
+│   ├── Dockerfile
+│   └── package.json
+├── postgres/
+│   └── init.sql                    # pgvector extension setup
+├── .env.example                    # Example environment variables
+├── docker-compose.yml              # Container orchestration
+├── .gitignore
+└── README.md
+```
+
 ## Architecture Overview
 
 This application features a clear separation between the **embedding process** and the **chat generation process**:
