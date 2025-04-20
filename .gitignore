@@ -19,7 +19,9 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
+venv/
+/venv/
+.venv/
 # Node
 node_modules/
 npm-debug.log
