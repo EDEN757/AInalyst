@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     
+    # SEC data fetching
+    SEC_EMAIL: str = "your_email@example.com"
+    
     # Number of chunks to retrieve for RAG
     RAG_TOP_K: int = 5
     

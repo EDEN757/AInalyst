@@ -3,6 +3,7 @@ import time
 import datetime
 import logging
 from typing import List, Dict, Any, Optional
+from app.core.config import settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # SEC API constants
 SEC_HEADERS = {
-    'User-Agent': 'S&P500RagBot edoardo.schiatti@gmail.com'
+    'User-Agent': f'S&P500RagBot {settings.SEC_EMAIL}'
 }
 SEC_BASE_URL = "https://data.sec.gov/submissions"
 
