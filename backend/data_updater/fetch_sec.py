@@ -213,3 +213,76 @@ def fetch_companies_and_filings(mode: str = 'DEMO', filing_limit: int = 2) -> Di
     logger.info(f"Total 10-K filings found: {len(results['filings'])}")
     
     return results
+
+
+def fetch_companies_and_filings_by_symbol(symbol: str, filing_limit: int = 2, filing_years: List[int] = None) -> Dict[str, List]:
+    """Fetch company information and filings for a specific ticker symbol.
+    
+    Args:
+        symbol: Company stock symbol (e.g., "AAPL")
+        filing_limit: Maximum number of 10-K filings to fetch
+        filing_years: Optional list of specific years to fetch filings for
+    
+    Returns:
+        Dictionary with company and filings lists
+    """
+    results = {
+        'companies': [],
+        'filings': []
+    }
+    
+    logger.info(f"Processing company with symbol: {symbol}")
+    
+    try:
+        # First, find this company in our demo list (this is just for testing)
+        demo_company = next((c for c in DEMO_COMPANIES if c['symbol'] == symbol), None)
+        
+        if demo_company:
+            # Use the demo company data if available
+            company = demo_company
+        else:
+            # In a real implementation, you would fetch actual company info from SEC or another API
+            # For now, we just create a placeholder with symbol
+            company = {
+                'symbol': symbol,
+                'name': f"{symbol} Inc.",  # Placeholder name
+                'cik': None  # Will need to be looked up from another source
+            }
+            
+            # TODO: Look up actual CIK from SEC API
+            
+        # Add company to results
+        results['companies'].append({
+            'symbol': company['symbol'],
+            'name': company['name'],
+            'cik': company.get('cik'),
+            'sector': company.get('sector'),
+            'industry': company.get('industry')
+        })
+        
+        if company.get('cik'):
+            # Get company submissions from SEC
+            submissions = get_company_submissions(company['cik'])
+            
+            # Extract 10-K filings
+            filings = extract_10k_filings(submissions, limit=filing_limit)
+            
+            # Filter by years if provided
+            if filing_years:
+                filings = [f for f in filings if f['fiscal_year'] in filing_years]
+            
+            # Add filings to results with company info
+            for filing in filings:
+                filing['company_symbol'] = company['symbol']
+                filing['company_name'] = company['name']
+                filing['company_cik'] = company['cik']
+                results['filings'].append(filing)
+            
+            logger.info(f"Found {len(filings)} 10-K filings for {company['symbol']}")
+        else:
+            logger.warning(f"Could not find CIK for {symbol}. No filings fetched.")
+        
+    except Exception as e:
+        logger.error(f"Error processing company {symbol}: {str(e)}")
+    
+    return results

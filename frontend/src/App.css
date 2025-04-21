@@ -27,6 +27,29 @@ body {
   margin-bottom: 10px;
 }
 
+/* App navigation */
+.app-nav {
+  display: flex;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #ddd;
+}
+
+.nav-item {
+  padding: 10px 20px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-right: 10px;
+}
+
+.nav-item:hover {
+  background-color: #f5f5f5;
+}
+
+.nav-item.active {
+  border-bottom: 2px solid #0084ff;
+  font-weight: bold;
+}
+
 .filters {
   display: flex;
   flex-wrap: wrap;
@@ -235,4 +258,156 @@ body {
 .input-form button:disabled {
   background-color: #cccccc;
   cursor: not-allowed;
+}
+
+/* Company Management Styles */
+.company-management {
+  margin-top: 20px;
+}
+
+.management-container {
+  display: flex;
+  gap: 30px;
+  margin-top: 20px;
+}
+
+.companies-panel, .filings-panel {
+  flex: 1;
+  background-color: #ffffff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.company-list, .filings-list {
+  margin-top: 15px;
+}
+
+.company-list table, .filings-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.company-list th, .filings-list th {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 2px solid #ddd;
+  font-weight: 600;
+}
+
+.company-list td, .filings-list td {
+  padding: 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.company-list tr:hover {
+  background-color: #f5f8fa;
+  cursor: pointer;
+}
+
+.company-list tr.selected {
+  background-color: #e6f3ff;
+}
+
+.add-company-form {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #ddd;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.form-group input, .form-group select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.button.primary {
+  background-color: #0084ff;
+  color: white;
+}
+
+.button.secondary {
+  background-color: #f0f2f5;
+  color: #333;
+  border: 1px solid #ddd;
+}
+
+.button.danger {
+  background-color: #ff4d4f;
+  color: white;
+}
+
+.button-small {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.button-small.danger {
+  background-color: #ff4d4f;
+  color: white;
+}
+
+.button:disabled, .button-small:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.empty-state {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+}
+
+.status-processed {
+  color: #2b882b;
+  font-weight: 500;
+}
+
+.status-pending {
+  color: #d97700;
+  font-weight: 500;
+}
+
+.onboarding-prompt {
+  background-color: #e6f3ff;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  border-left: 4px solid #0084ff;
+}
+
+.onboarding-prompt h3 {
+  margin-top: 0;
+  color: #0084ff;
+}
+
+.error {
+  color: #c42b2b;
+  padding: 10px;
+  background-color: #fff4f4;
+  border-radius: 4px;
+  margin-bottom: 15px;
 }

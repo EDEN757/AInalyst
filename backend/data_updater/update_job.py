@@ -157,6 +157,47 @@ def process_filings(db):
     }
 
 
+def process_company_data(db, data):
+    """Process company data and filings.
+    
+    Args:
+        db: Database session
+        data: Dictionary with 'companies' and 'filings' lists
+    
+    Returns:
+        Dictionary with processing results
+    """
+    start_time = time.time()
+    summary = {}
+    
+    try:
+        # 1. Store companies and filings
+        logger.info("Storing companies and filings...")
+        summary["fetch"] = store_companies_and_filings(db, data)
+        
+        # 2. Process filings into chunks
+        logger.info("Processing filings...")
+        summary["process"] = process_filings(db)
+        
+        # 3. Create embeddings for chunks
+        logger.info("Creating embeddings...")
+        summary["embeddings"] = create_embeddings(db)
+        
+        duration = time.time() - start_time
+        summary["duration_seconds"] = round(duration, 2)
+        summary["status"] = "completed"
+        
+        return summary
+    
+    except Exception as e:
+        logger.error(f"Error in processing company data: {str(e)}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "duration_seconds": round(time.time() - start_time, 2)
+        }
+
+
 def run_update_job(mode='DEMO', skip_fetch=False, skip_process=False, skip_embeddings=False):
     """Run the complete data update job.
     
