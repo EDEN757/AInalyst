@@ -41,15 +41,15 @@ def get_embedding(text: str, config: Settings) -> List[float]:
         if not openai:
             raise ImportError("OpenAI package is not installed. Run 'pip install openai'")
         
-        # Configure API key
-        openai.api_key = config.OPENAI_API_KEY
-        
         try:
-            response = openai.Embedding.create(
+            # Use the updated OpenAI client (v1.0+)
+            client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+            
+            response = client.embeddings.create(
                 input=text,
                 model=config.EMBEDDING_MODEL
             )
-            embedding = response['data'][0]['embedding']
+            embedding = response.data[0].embedding
             
             # Validate dimension
             if len(embedding) != config.EMBEDDING_DIMENSION:
@@ -114,13 +114,13 @@ def generate_chat_response(prompt: str, context: str, query: str, config: Settin
         if not openai:
             raise ImportError("OpenAI package is not installed. Run 'pip install openai'")
         
-        # Configure API key
-        openai.api_key = config.OPENAI_API_KEY
-        
         try:
+            # Create OpenAI client with new API style
+            client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+            
             full_prompt = f"{prompt}\n\nContext:\n{context}\n\nUser Query: {query}\n\nAnswer:"
             
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model=config.CHAT_MODEL,
                 messages=[
                     {"role": "system", "content": prompt},
