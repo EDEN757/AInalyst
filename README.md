@@ -324,6 +324,24 @@ For a production deployment, consider the following additional steps:
 
 [MIT License](LICENSE)
 
+## Troubleshooting
+
+### No Context Found / Empty Search Results
+
+If the system reports "No context found" or gives generic responses despite having companies in the database, the embeddings may not be fully generated. Run this command to create missing embeddings:
+
+```bash
+docker exec -it sp500_rag_backend python -c 'from app.db.database import SessionLocal; from data_updater.create_embeddings import create_embeddings; db = SessionLocal(); print(create_embeddings(db)); db.close()'
+```
+
+This process may take some time depending on how many text chunks need embeddings. You can monitor progress with:
+
+```bash
+docker exec -it sp500_rag_db psql -U postgres -d <your_db_name> -c "SELECT COUNT(*) as total_chunks, SUM(CASE WHEN embedded THEN 1 ELSE 0 END) as embedded_chunks FROM text_chunks;"
+```
+
+Replace `<your_db_name>` with your database name (default is `sp500_db`).
+
 ## Acknowledgments
 
 - This project uses the SEC's EDGAR database for company filings
