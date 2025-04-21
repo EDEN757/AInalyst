@@ -31,11 +31,11 @@ class Settings(BaseSettings):
     RAG_TOP_K: int = 5
     
     @validator("OPENAI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY", pre=True)
-    def validate_api_keys(cls, v, values):
+    def validate_api_keys(cls, v, values, info):
         return v
     
     @validator("EMBEDDING_DIMENSION")
-    def validate_embedding_dimension(cls, v, values):
+    def validate_embedding_dimension(cls, v, values, info):
         # Known dimensions for specific models
         model_dimensions = {
             "text-embedding-ada-002": 1536,
@@ -52,8 +52,8 @@ class Settings(BaseSettings):
         return v
     
     @validator("OPENAI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY")
-    def validate_required_api_keys(cls, v, values, field):
-        field_name = field.name
+    def validate_required_api_keys(cls, v, values, info):
+        field_name = info.field_name
         
         # Check if OpenAI API key is provided when OpenAI is used
         if field_name == "OPENAI_API_KEY" and (
