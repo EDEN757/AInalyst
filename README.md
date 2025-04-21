@@ -106,7 +106,7 @@ This separation allows you to optimize for different use cases:
 1. Clone this repository:
    ```
    git clone <repository-url>
-   cd sp500_rag_chatbot
+   cd AInalyst
    ```
 
 2. Create a `.env` file from the example:
