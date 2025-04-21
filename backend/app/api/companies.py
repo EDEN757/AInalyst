@@ -26,7 +26,8 @@ async def get_companies(
     logger.info(f"GET /companies request from {client_ip} (skip={skip}, limit={limit})")
     
     try:
-        start_time = request.state.start_time = request.state.get("start_time", None)
+        # Get start_time if it exists, otherwise it's None
+        start_time = getattr(request.state, "start_time", None)
         companies = crud.get_companies(db=db, skip=skip, limit=limit)
         
         if not companies:
