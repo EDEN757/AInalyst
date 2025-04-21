@@ -103,7 +103,7 @@ def update_chunk_embedding(db: Session, chunk_id: int, embedding: List[float]) -
 def search_chunks_by_embedding(
     db: Session, 
     query_embedding: List[float],
-    company_symbol: Optional[str] = None,
+    company_symbols: Optional[List[str]] = None,
     filing_year: Optional[int] = None,
     limit: int = settings.RAG_TOP_K
 ) -> List[TextChunk]:
@@ -113,14 +113,18 @@ def search_chunks_by_embedding(
         TextChunk.embedding.cosine_distance(query_embedding).label("distance")
     ).filter(TextChunk.embedded == True)
     
+    # Track if we've already joined the tables
+    tables_joined = False
+    
     # Apply filters if provided
-    if company_symbol:
+    if company_symbols and len(company_symbols) > 0:
         query = query.join(Filing, TextChunk.filing_id == Filing.id) \
                  .join(Company, Filing.company_id == Company.id) \
-                 .filter(Company.symbol == company_symbol)
+                 .filter(Company.symbol.in_(company_symbols))
+        tables_joined = True
     
     if filing_year:
-        if not company_symbol:  # Only need to join if we haven't already
+        if not tables_joined:  # Only need to join if we haven't already
             query = query.join(Filing, TextChunk.filing_id == Filing.id)
         query = query.filter(Filing.fiscal_year == filing_year)
     

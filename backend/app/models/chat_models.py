@@ -4,7 +4,7 @@ from typing import List, Optional
 
 class UserQuery(BaseModel):
     query: str
-    company_symbol: Optional[str] = None  # Filter by company if provided
+    company_symbols: Optional[List[str]] = None  # Filter by companies if provided
     filing_year: Optional[int] = None  # Filter by filing year if provided
 
 

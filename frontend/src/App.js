@@ -9,7 +9,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [companies, setCompanies] = useState([]);
-  const [selectedCompany, setSelectedCompany] = useState('');
+  const [selectedCompanies, setSelectedCompanies] = useState([]);
   const [filingYear, setFilingYear] = useState('');
   const messagesEndRef = useRef(null);
   
@@ -61,8 +61,8 @@ function App() {
         query: input
       };
       
-      if (selectedCompany) {
-        query.company_symbol = selectedCompany;
+      if (selectedCompanies && selectedCompanies.length > 0) {
+        query.company_symbols = selectedCompanies;
       }
       
       if (filingYear && !isNaN(parseInt(filingYear))) {
@@ -102,8 +102,8 @@ function App() {
         <div className="filters">
           <CompanySelect 
             companies={companies} 
-            selectedCompany={selectedCompany}
-            onChange={setSelectedCompany}
+            selectedCompanies={selectedCompanies}
+            onChange={setSelectedCompanies}
           />
           <div className="filing-year">
             <label htmlFor="filingYear">Filing Year:</label>

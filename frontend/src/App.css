@@ -47,6 +47,62 @@ body {
   width: 120px;
 }
 
+/* Multi-select dropdown styles */
+.company-select {
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.custom-select {
+  position: relative;
+  width: 100%;
+}
+
+.select-header {
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background-color: white;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.select-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 10;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.select-option {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.select-option:hover {
+  background-color: #f5f5f5;
+}
+
+.select-option input {
+  margin-right: 8px;
+}
+
+.dropdown-arrow {
+  margin-left: 8px;
+}
+
 .chat-container {
   flex: 1;
   display: flex;

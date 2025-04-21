@@ -24,7 +24,7 @@ def generate_answer(db: Session, user_query: UserQuery) -> ChatResponse:
     relevant_chunks = crud.search_chunks_by_embedding(
         db=db,
         query_embedding=query_embedding,
-        company_symbol=user_query.company_symbol,
+        company_symbols=user_query.company_symbols,
         filing_year=user_query.filing_year,
         limit=settings.RAG_TOP_K
     )
