@@ -4,12 +4,20 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
+import logging
 
-from ..db.database import get_db
+from ..db.database import get_db, Base, engine
 from ..db import crud
 from ..models.database_models import Company
-from data_updater.fetch_sec import fetch_companies_and_filings_by_symbol, DEMO_COMPANIES
+from data_updater.fetch_sec import fetch_companies_and_filings_by_symbol, DEMO_COMPANIES, fetch_companies_and_filings
 from data_updater.update_job import process_company_data
+
+# Ensure database tables exist
+try:
+    Base.metadata.create_all(bind=engine)
+    logging.getLogger(__name__).info("Database tables created if they didn't exist")
+except Exception as e:
+    logging.getLogger(__name__).error(f"Error creating database tables: {str(e)}")
 
 # Configure logging
 logger = logging.getLogger(__name__)

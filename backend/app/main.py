@@ -70,7 +70,7 @@ async def log_requests(request: Request, call_next):
             content={"detail": "Internal server error"},
         )
 
-# Startup event to check database connection
+# Startup event to check database connection and initialize tables
 @app.on_event("startup")
 async def startup_db_client():
     logger.info("Starting up application...")
@@ -83,6 +83,13 @@ async def startup_db_client():
                 logger.info("✅ Successfully connected to the database")
             else:
                 logger.error("❌ Failed to validate database connection")
+        
+        # Initialize database tables if they don't exist
+        from app.db.database import Base
+        from app.models.database_models import Company, Filing, TextChunk
+        logger.info("Creating database tables if they don't exist...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables created or verified")
                 
         # Log configuration information
         logger.info(f"Application Mode: {settings.APP_MODE}")
