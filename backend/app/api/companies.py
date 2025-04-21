@@ -133,7 +133,6 @@ async def get_company_filings(symbol: str, request: Request, db: Session = Depen
 @router.post("/companies/add", status_code=status.HTTP_202_ACCEPTED)
 async def add_company(
     data: AddCompanyRequest,
-    background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db)
 ):
@@ -154,14 +153,69 @@ async def add_company(
                     "filings_count": len(existing_company.filings)
                 }
             }
-            
-        # Schedule the background task
-        background_tasks.add_task(
-            fetch_and_process_company, 
-            symbol=data.symbol,
-            filing_years=data.filing_years,
-            filing_limit=data.filing_limit
-        )
+        
+        # CRITICAL CHANGE: Instead of using FastAPI background tasks which are unreliable in Docker,
+        # we'll create a custom solution using threading and subprocess    
+        import subprocess
+        import threading
+        import json
+        
+        def run_in_thread():
+            logger.info(f"Starting company {data.symbol} loading in a separate process")
+            try:
+                # Create a temporary JSON file with the company data
+                import tempfile
+                import os
+                
+                # Execute a custom script to add just one company
+                cmd = ["python", "-c", f'''
+import sys
+sys.path.append("/app")
+from data_updater.fetch_sec import fetch_companies_and_filings_by_symbol
+from data_updater.update_job import process_company_data 
+from app.db.database import SessionLocal
+
+symbol = "{data.symbol}"
+filing_limit = {data.filing_limit or 2}
+filing_years = {json.dumps(data.filing_years) if data.filing_years else None}
+
+# Create DB session
+db = SessionLocal()
+
+try:
+    # Fetch the company data
+    print(f"Fetching data for company {{symbol}}")
+    company_data = fetch_companies_and_filings_by_symbol(symbol, filing_limit=filing_limit, filing_years=filing_years)
+    
+    if not company_data["companies"]:
+        print(f"No data found for company {{symbol}}")
+        sys.exit(1)
+        
+    # Process the company data
+    print(f"Processing data for company {{symbol}}")
+    result = process_company_data(db, company_data)
+    print(f"Company {{symbol}} processed: {{result}}")
+except Exception as e:
+    print(f"Error processing company {{symbol}}: {{str(e)}}")
+    sys.exit(1)
+finally:
+    db.close()
+''']
+                
+                # Run the script in a subprocess
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    logger.info(f"Company {data.symbol} loading completed successfully: {result.stdout}")
+                else:
+                    logger.error(f"Company {data.symbol} loading failed: {result.stderr}")
+            except Exception as e:
+                logger.error(f"Error starting company process: {str(e)}", exc_info=True)
+        
+        # Start the thread to run the process
+        thread = threading.Thread(target=run_in_thread)
+        thread.daemon = True
+        thread.start()
         
         return {
             "status": "processing",
@@ -179,7 +233,6 @@ async def add_company(
 @router.post("/companies/add-demo", status_code=status.HTTP_202_ACCEPTED)
 async def add_demo_companies(
     data: AddDemoCompaniesRequest,
-    background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db)
 ):
@@ -197,13 +250,32 @@ async def add_demo_companies(
                 "message": "Companies already exist in the database"
             }
         
-        # Schedule the background task to add demo companies
-        logger.info("Scheduling background task to add demo companies")
-        background_tasks.add_task(add_demo_companies_task)
+        # CRITICAL CHANGE: Instead of using background tasks which are unreliable in the Docker environment,
+        # we'll start a separate process to run the update job
+        import subprocess
+        import threading
         
-        # Also schedule a fallback check task
-        logger.info("Scheduling fallback verification task")
-        background_tasks.add_task(check_demo_companies_added)
+        def run_in_thread():
+            logger.info("Starting demo companies loading in a separate process")
+            try:
+                # Execute the update_job script in a separate process
+                result = subprocess.run(
+                    ["python", "-m", "data_updater.update_job", "--mode", "DEMO"],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode == 0:
+                    logger.info(f"Demo companies loading completed successfully: {result.stdout}")
+                else:
+                    logger.error(f"Demo companies loading failed: {result.stderr}")
+            except Exception as e:
+                logger.error(f"Error starting demo companies process: {str(e)}", exc_info=True)
+        
+        # Start the thread to run the process
+        thread = threading.Thread(target=run_in_thread)
+        thread.daemon = True  # This allows the thread to exit when the main program exits
+        thread.start()
         
         demo_symbols = [company["symbol"] for company in DEMO_COMPANIES[:3]]
         return {
