@@ -76,8 +76,9 @@ async def startup_db_client():
     logger.info("Starting up application...")
     try:
         # Verify database connection
+        from sqlalchemy import text
         with engine.connect() as conn:
-            result = conn.execute("SELECT 1")
+            result = conn.execute(text("SELECT 1"))
             if result:
                 logger.info("✅ Successfully connected to the database")
             else:
@@ -103,8 +104,9 @@ async def shutdown_db_client():
 async def root():
     try:
         # Test database connection
+        from sqlalchemy import text
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(text("SELECT 1"))
             db_status = "connected"
     except Exception as e:
         logger.error(f"Database connection check failed: {str(e)}")
@@ -124,8 +126,9 @@ async def root():
 async def health_check():
     # Check database connection
     try:
+        from sqlalchemy import text
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(text("SELECT 1"))
             db_status = "ok"
     except Exception as e:
         logger.error(f"Health check database connection failed: {str(e)}")

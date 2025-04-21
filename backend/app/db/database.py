@@ -58,8 +58,9 @@ def get_db() -> Generator[Session, None, None]:
     # Try to verify the connection
     for attempt in range(retries):
         try:
-            # Test connection with a simple query
-            db.execute("SELECT 1")
+            # Test connection with a simple query using SQLAlchemy text()
+            from sqlalchemy import text
+            db.execute(text("SELECT 1"))
             break
         except (OperationalError, DisconnectionError) as e:
             logger.warning(f"Database connection failed on attempt {attempt+1}/{retries}: {e}")
