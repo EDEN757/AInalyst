@@ -52,23 +52,27 @@ class Settings(BaseSettings):
         return v
     
     @validator("OPENAI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY")
-    def validate_required_api_keys(cls, v, values):
+    def validate_required_api_keys(cls, v, values, field):
+        field_name = field.name
+        
         # Check if OpenAI API key is provided when OpenAI is used
-        if (
+        if field_name == "OPENAI_API_KEY" and (
             values.get("EMBEDDING_PROVIDER") == "OPENAI" or 
             values.get("CHAT_PROVIDER") == "OPENAI"
-        ) and not values.get("OPENAI_API_KEY"):
+        ) and not v:
             raise ValueError("OPENAI_API_KEY is required when using OpenAI services")
         
         # Check if Google API key is provided when Gemini is used
-        if (
+        if field_name == "GOOGLE_API_KEY" and (
             values.get("EMBEDDING_PROVIDER") == "GEMINI" or 
             values.get("CHAT_PROVIDER") == "GEMINI"
-        ) and not values.get("GOOGLE_API_KEY"):
+        ) and not v:
             raise ValueError("GOOGLE_API_KEY is required when using Gemini services")
         
         # Check if Anthropic API key is provided when Claude is used
-        if values.get("CHAT_PROVIDER") == "CLAUDE" and not values.get("ANTHROPIC_API_KEY"):
+        if field_name == "ANTHROPIC_API_KEY" and (
+            values.get("CHAT_PROVIDER") == "CLAUDE"
+        ) and not v:
             raise ValueError("ANTHROPIC_API_KEY is required when using Claude services")
         
         return v
