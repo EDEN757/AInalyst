@@ -1,5 +1,5 @@
-from typing import Optional, Literal
-from pydantic import validator
+from typing import Optional, Literal, Any, Dict
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -30,18 +30,17 @@ class Settings(BaseSettings):
     # Number of chunks to retrieve for RAG
     RAG_TOP_K: int = 5
     
-    @validator("OPENAI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY", pre=True)
-    def validate_api_keys(cls, v, values, info):
-        return v
-    
-    @validator("EMBEDDING_DIMENSION")
-    def validate_embedding_dimension(cls, v, values, info):
+    @field_validator("EMBEDDING_DIMENSION")
+    def validate_embedding_dimension(cls, v: int, info: Any) -> int:
         # Known dimensions for specific models
         model_dimensions = {
             "text-embedding-ada-002": 1536,
             "models/embedding-001": 768,
             # Add more models as needed
         }
+        
+        # Get values from the model being validated
+        values = info.data
         
         model = values.get("EMBEDDING_MODEL")
         if model in model_dimensions and v != model_dimensions[model]:
@@ -51,31 +50,23 @@ class Settings(BaseSettings):
             )
         return v
     
-    @validator("OPENAI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY")
-    def validate_required_api_keys(cls, v, values, info):
-        field_name = info.field_name
+    @model_validator(mode='after')
+    def validate_api_keys(self) -> 'Settings':
+        """Validate that the appropriate API keys are provided based on providers selected."""
         
         # Check if OpenAI API key is provided when OpenAI is used
-        if field_name == "OPENAI_API_KEY" and (
-            values.get("EMBEDDING_PROVIDER") == "OPENAI" or 
-            values.get("CHAT_PROVIDER") == "OPENAI"
-        ) and not v:
+        if (self.EMBEDDING_PROVIDER == "OPENAI" or self.CHAT_PROVIDER == "OPENAI") and not self.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY is required when using OpenAI services")
         
         # Check if Google API key is provided when Gemini is used
-        if field_name == "GOOGLE_API_KEY" and (
-            values.get("EMBEDDING_PROVIDER") == "GEMINI" or 
-            values.get("CHAT_PROVIDER") == "GEMINI"
-        ) and not v:
+        if (self.EMBEDDING_PROVIDER == "GEMINI" or self.CHAT_PROVIDER == "GEMINI") and not self.GOOGLE_API_KEY:
             raise ValueError("GOOGLE_API_KEY is required when using Gemini services")
         
         # Check if Anthropic API key is provided when Claude is used
-        if field_name == "ANTHROPIC_API_KEY" and (
-            values.get("CHAT_PROVIDER") == "CLAUDE"
-        ) and not v:
+        if self.CHAT_PROVIDER == "CLAUDE" and not self.ANTHROPIC_API_KEY:
             raise ValueError("ANTHROPIC_API_KEY is required when using Claude services")
         
-        return v
+        return self
     
     class Config:
         env_file = ".env"
