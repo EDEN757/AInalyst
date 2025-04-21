@@ -180,15 +180,30 @@ async def add_company(
 async def add_demo_companies(
     data: AddDemoCompaniesRequest,
     background_tasks: BackgroundTasks,
-    request: Request
+    request: Request,
+    db: Session = Depends(get_db)
 ):
     """Add demo companies (AAPL, MSFT, GOOGL) to the database"""
     client_ip = request.client.host if request.client else "unknown"
     logger.info(f"POST /companies/add-demo request from {client_ip}")
     
     if data.enabled:
+        # Check if any companies already exist
+        existing_companies = crud.get_companies(db=db, limit=1)
+        if existing_companies:
+            logger.info("Companies already exist in the database, skipping demo data load")
+            return {
+                "status": "success",
+                "message": "Companies already exist in the database"
+            }
+        
         # Schedule the background task to add demo companies
+        logger.info("Scheduling background task to add demo companies")
         background_tasks.add_task(add_demo_companies_task)
+        
+        # Also schedule a fallback check task
+        logger.info("Scheduling fallback verification task")
+        background_tasks.add_task(check_demo_companies_added)
         
         demo_symbols = [company["symbol"] for company in DEMO_COMPANIES[:3]]
         return {
@@ -244,16 +259,24 @@ async def fetch_and_process_company(symbol: str, filing_years=None, filing_limit
         db = SessionLocal()
         
         # Fetch company data from SEC
+        logger.info(f"Fetching data for company {symbol}")
         company_data = fetch_companies_and_filings_by_symbol(symbol, filing_limit=filing_limit, filing_years=filing_years)
         
+        if not company_data['companies']:
+            logger.error(f"No company data fetched for {symbol}")
+            if 'db' in locals():
+                db.close()
+            return {"status": "error", "message": f"No data found for company {symbol}"}
+        
         # Process the company data
+        logger.info(f"Processing data for company {symbol}")
         results = process_company_data(db, company_data)
         
         logger.info(f"Finished processing company {symbol}: {results}")
         db.close()
         return results
     except Exception as e:
-        logger.error(f"Error in background task for company {symbol}: {str(e)}")
+        logger.error(f"Error in background task for company {symbol}: {str(e)}", exc_info=True)
         if 'db' in locals():
             db.close()
         raise
@@ -266,17 +289,62 @@ async def add_demo_companies_task():
         # Create a new database session for the background task
         db = SessionLocal()
         
+        # Check if any companies already exist
+        existing = crud.get_companies(db=db, limit=1)
+        if existing:
+            logger.info("Companies already exist, skipping demo data loading")
+            db.close()
+            return {"status": "skipped", "message": "Companies already exist"}
+        
         # Fetch only the first 3 demo companies (Apple, Microsoft, Google)
+        logger.info("Fetching demo companies data")
         company_data = fetch_companies_and_filings(mode='DEMO', filing_limit=2)
         
+        if not company_data['companies']:
+            logger.error("No demo company data fetched")
+            db.close()
+            return {"status": "error", "message": "No demo company data fetched"}
+        
         # Process the company data
+        logger.info("Processing demo companies data")
         results = process_company_data(db, company_data)
         
         logger.info(f"Finished processing demo companies: {results}")
         db.close()
         return results
     except Exception as e:
-        logger.error(f"Error in background task for demo companies: {str(e)}")
+        logger.error(f"Error in background task for demo companies: {str(e)}", exc_info=True)
         if 'db' in locals():
             db.close()
         raise
+
+
+async def check_demo_companies_added():
+    """Check if demo companies were added and run updater if not"""
+    import asyncio
+    import time
+    
+    logger.info("Fallback verification task started")
+    
+    # Wait a bit to give background task a chance to complete
+    await asyncio.sleep(30)
+    
+    # Check if companies exist
+    db = SessionLocal()
+    try:
+        companies = crud.get_companies(db=db, limit=1)
+        if not companies:
+            logger.warning("No companies found after background task, running updater directly")
+            
+            # Run the update job directly
+            from data_updater.update_job import run_update_job
+            start_time = time.time()
+            
+            result = run_update_job(mode='DEMO')
+            
+            duration = time.time() - start_time
+            logger.info(f"Direct update job completed in {duration:.2f} seconds with result: {result}")
+    except Exception as e:
+        logger.error(f"Error in fallback verification task: {str(e)}", exc_info=True)
+    finally:
+        db.close()
