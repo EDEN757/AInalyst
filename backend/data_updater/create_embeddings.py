@@ -3,9 +3,9 @@ import logging
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
-from ..db import crud
-from ..core.config import settings
-from ..services import llm_clients
+from app.db import crud
+from app.core.config import settings
+from app.services import llm_clients
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
