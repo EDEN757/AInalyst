@@ -43,7 +43,8 @@ AInalyst/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── ChatMessage.js      # Chat message component
-│   │   │   └── CompanySelect.js    # Company dropdown component
+│   │   │   ├── CompanySelect.js    # Company dropdown component
+│   │   │   └── CompanyManagement.js # Company management interface
 │   │   ├── App.css
 │   │   ├── App.js                  # Main React application
 │   │   ├── index.css
@@ -78,9 +79,10 @@ This separation allows you to optimize for different use cases:
 - **Vector Similarity Search**: Uses PostgreSQL with pgvector extension to store and query document vectors
 - **Configurable Models**: Set different providers and models for embedding vs. chat generation
 - **Interactive Chat Interface**: React-based UI with filtering by company and year
+- **Company Management Interface**: Add, view, and delete companies directly through the UI
 - **Document Processing Pipeline**: Fetches, extracts, chunks, and embeds 10-K filings
 - **Containerized Architecture**: Everything runs in Docker containers for easy deployment
-- **Demo Mode**: Start with a subset of companies to explore functionality
+- **Demo Companies**: Easily load sample companies (Apple, Microsoft, Google) to explore the system
 
 ## Technology Stack
 
@@ -142,9 +144,10 @@ This separation allows you to optimize for different use cases:
       POSTGRES_DB=sp500_db
       ```
 
-   e. **Application Mode**:
+   e. **Application Configuration**:
       ```
-      APP_MODE=DEMO
+      # This setting is now used for internal processing, not for enabling/disabling demo mode
+      APP_MODE=FULL
       ```
 
 4. **CRITICAL**: The `EMBEDDING_DIMENSION` parameter MUST accurately match the output dimension of your chosen `EMBEDDING_MODEL`. The database will create a `VECTOR(dimension)` column based on this value.
@@ -156,10 +159,13 @@ This separation allows you to optimize for different use cases:
    docker-compose up --build -d
    ```
 
-2. Load initial data (only needs to be run once):
-   ```
-   docker-compose exec backend python /app/data_updater/update_job.py
-   ```
+2. Access the application - no initial setup needed:
+   
+   When you first access the application, you'll be prompted to add companies to the database:
+   - You can use the "Load Demo Companies" button to quickly add Apple, Microsoft, and Google
+   - Or you can manually add companies by entering their ticker symbols (e.g., "AAPL", "MSFT", "GOOGL")
+   
+   Note: The embedding process for new companies happens in the background and may take some time to complete.
 
 3. Access the application:
    - Frontend: http://localhost:3000
@@ -172,9 +178,17 @@ Once running, you can access the API documentation at:
 
 ## Usage
 
-1. **Chat Interface**: Enter questions about S&P 500 companies' 10-K filings
-2. **Filtering**: Optionally filter by specific company and/or filing year
-3. **Sources**: Each answer includes the source documents used to generate it
+1. **Company Management**: Access the "Company Management" tab to:
+   - View companies currently in your database
+   - See details of company filings
+   - Add new companies by ticker symbol
+   - Load demo companies with a single click
+   - Delete companies you no longer need
+
+2. **Chat Interface**: Enter questions about companies' 10-K filings:
+   - Filter by specific companies using the dropdown
+   - Filter by specific filing year
+   - View source documents for each answer
 
 Example questions:
 - "What are Apple's main risk factors?"
@@ -256,9 +270,10 @@ docker-compose exec backend python /app/data_updater/update_job.py --skip-embedd
    docker-compose up -d --build
    ```
 
-5. **Initialize the database and load data**:
+5. **Access the application**:
    ```bash
-   docker-compose exec backend python /app/data_updater/update_job.py
+   # No manual database initialization needed
+   # Just access the frontend and use the Company Management interface
    ```
 
 6. **Configure firewall (if needed)**:
