@@ -11,22 +11,88 @@ function App() {
   const [companies, setCompanies] = useState([]);
   const [selectedCompanies, setSelectedCompanies] = useState([]);
   const [filingYear, setFilingYear] = useState('');
+  const [apiError, setApiError] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
   const messagesEndRef = useRef(null);
   
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+  
+  // Check API connectivity
+  useEffect(() => {
+    const checkApiStatus = async () => {
+      try {
+        setApiError(null);
+        const response = await axios.get(`${API_URL}/health`, { timeout: 5000 });
+        if (response.data.status === 'ok') {
+          setIsConnected(true);
+          console.log('API connected successfully');
+          console.log('Database status:', response.data.database);
+        } else {
+          console.error('API health check returned non-ok status:', response.data);
+          setApiError(`API Error: ${JSON.stringify(response.data)}`);
+          setIsConnected(false);
+        }
+      } catch (error) {
+        console.error('API health check error:', error);
+        if (error.response) {
+          // Server responded with an error
+          setApiError(`API Error (${error.response.status}): ${error.response.data.detail || JSON.stringify(error.response.data)}`);
+        } else if (error.request) {
+          // No response received
+          setApiError('Connection Error: Unable to reach the API server. Please check if the backend is running.');
+        } else {
+          // Something else went wrong
+          setApiError(`Request Error: ${error.message}`);
+        }
+        setIsConnected(false);
+      }
+    };
+    
+    checkApiStatus();
+    // Check API health every 30 seconds
+    const interval = setInterval(checkApiStatus, 30000);
+    return () => clearInterval(interval);
+  }, [API_URL]);
 
   // Fetch companies on component mount
   useEffect(() => {
     const fetchCompanies = async () => {
+      if (!isConnected) return; // Don't fetch if not connected
+      
       try {
-        const response = await axios.get(`${API_URL}/api/v1/companies`);
-        setCompanies(response.data);
+        setApiError(null);
+        const response = await axios.get(`${API_URL}/api/v1/companies`, { timeout: 10000 });
+        
+        if (response.data && Array.isArray(response.data)) {
+          console.log(`Fetched ${response.data.length} companies successfully`);
+          setCompanies(response.data);
+          
+          if (response.data.length === 0) {
+            setApiError('Warning: No companies found in the database. The database might be empty.');
+          }
+        } else {
+          console.error('Companies API returned unexpected data format:', response.data);
+          setApiError('Error: Received invalid data format from the server.');
+        }
       } catch (error) {
         console.error('Error fetching companies:', error);
+        
+        if (error.response) {
+          // Server responded with an error
+          setApiError(`Companies API Error (${error.response.status}): ${error.response.data.detail || JSON.stringify(error.response.data)}`);
+        } else if (error.request) {
+          // No response received from the request
+          setApiError('Connection Error: Unable to fetch companies. The request timed out.');
+        } else {
+          // Something else went wrong
+          setApiError(`Request Error: ${error.message}`);
+        }
       }
     };
 
-    fetchCompanies();
+    if (isConnected) {
+      fetchCompanies();
+    }
 
     // Add welcome message
     setMessages([
@@ -35,7 +101,15 @@ function App() {
         content: 'Welcome to the S&P 500 10-K RAG Chatbot! Ask me anything about S&P 500 companies\'10-K filings.'
       }
     ]);
-  }, [API_URL]);
+    
+    // If there's an API error, add it as a system message
+    if (apiError) {
+      setMessages(prev => [...prev, {
+        role: 'system',
+        content: apiError
+      }]);
+    }
+  }, [API_URL, isConnected, apiError]);
 
   // Auto-scroll to bottom of chat
   useEffect(() => {
@@ -69,8 +143,14 @@ function App() {
         query.filing_year = parseInt(filingYear);
       }
       
-      // Send to API
-      const response = await axios.post(`${API_URL}/api/v1/chat`, query);
+      console.log('Sending chat query:', query);
+      
+      // Send to API with timeout
+      const response = await axios.post(
+        `${API_URL}/api/v1/chat`, 
+        query,
+        { timeout: 30000 } // 30 second timeout for chat requests
+      );
       
       // Add assistant response to chat
       const assistantMessage = {
@@ -81,12 +161,33 @@ function App() {
       
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
-      console.error('Error getting response:', error);
+      console.error('Error getting chat response:', error);
+      
+      // Create error message with detailed information
+      let errorContent = 'Sorry, there was an error processing your request. ';
+      
+      if (error.response) {
+        // Server responded with an error
+        console.error('Error response:', error.response);
+        errorContent += `Server Error (${error.response.status}): `;
+        
+        if (error.response.data && error.response.data.detail) {
+          errorContent += error.response.data.detail;
+        } else {
+          errorContent += 'Unknown server error';
+        }
+      } else if (error.request) {
+        // Request made but no response received (timeout)
+        errorContent += 'The request timed out. The server might be overloaded or experiencing issues.';
+      } else {
+        // Error in setting up the request
+        errorContent += `Request Error: ${error.message}`;
+      }
       
       // Add error message
       const errorMessage = {
         role: 'system',
-        content: 'Sorry, there was an error processing your request. Please try again.'
+        content: errorContent
       };
       
       setMessages(prev => [...prev, errorMessage]);
@@ -99,6 +200,19 @@ function App() {
     <div className="App">
       <header className="App-header">
         <h1>S&P 500 10-K RAG Chatbot</h1>
+        {apiError && (
+          <div className="api-error">
+            <span className="error-icon">⚠️</span> {apiError}
+          </div>
+        )}
+        <div className="connection-status">
+          API Status: <span className={isConnected ? "connected" : "disconnected"}>
+            {isConnected ? "✅ Connected" : "❌ Disconnected"}
+          </span>
+          {isConnected && companies.length === 0 && (
+            <span className="warning">⚠️ No companies found in database</span>
+          )}
+        </div>
         <div className="filters">
           <CompanySelect 
             companies={companies} 
@@ -135,9 +249,13 @@ function App() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask about S&P 500 companies' 10-K filings..."
-            disabled={loading}
+            disabled={loading || !isConnected}
           />
-          <button type="submit" disabled={loading || !input.trim()}>
+          <button 
+            type="submit" 
+            disabled={loading || !input.trim() || !isConnected}
+            title={!isConnected ? "API is disconnected" : ""}
+          >
             Send
           </button>
         </form>

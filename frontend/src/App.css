@@ -167,6 +167,41 @@ body {
   font-style: italic;
 }
 
+/* API connection status styles */
+.api-error {
+  margin: 10px 0;
+  padding: 10px;
+  border-radius: 4px;
+  background-color: #fff4f4;
+  color: #c42b2b;
+  font-size: 14px;
+  border-left: 4px solid #c42b2b;
+}
+
+.connection-status {
+  margin: 8px 0;
+  font-size: 14px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+.connected {
+  color: #2b882b;
+  font-weight: bold;
+}
+
+.disconnected {
+  color: #c42b2b;
+  font-weight: bold;
+}
+
+.warning {
+  color: #d97700;
+  font-weight: 500;
+}
+
 .input-form {
   display: flex;
   padding: 15px;
