@@ -3,8 +3,10 @@ import axios from 'axios';
 import './App.css';
 import ChatMessage from './components/ChatMessage';
 import CompanySelect from './components/CompanySelect';
+import CompanyManagement from './components/CompanyManagement';
 
 function App() {
+  const [activeTab, setActiveTab] = useState('chat');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -69,6 +71,8 @@ function App() {
           
           if (response.data.length === 0) {
             setApiError('Warning: No companies found in the database. The database might be empty.');
+            // Show the management tab on first load if no companies
+            setActiveTab('manage');
           }
         } else {
           console.error('Companies API returned unexpected data format:', response.data);
@@ -195,11 +199,16 @@ function App() {
       setLoading(false);
     }
   };
+  
+  // Handler for company updates from the management component
+  const handleCompaniesUpdated = (updatedCompanies) => {
+    setCompanies(updatedCompanies);
+  };
 
   return (
     <div className="App">
       <header className="App-header">
-        <h1>S&P 500 10-K RAG Chatbot</h1>
+        <h1>AInalyst: 10-K Analysis Platform</h1>
         {apiError && (
           <div className="api-error">
             <span className="error-icon">⚠️</span> {apiError}
@@ -213,53 +222,86 @@ function App() {
             <span className="warning">⚠️ No companies found in database</span>
           )}
         </div>
-        <div className="filters">
-          <CompanySelect 
-            companies={companies} 
-            selectedCompanies={selectedCompanies}
-            onChange={setSelectedCompanies}
-          />
-          <div className="filing-year">
-            <label htmlFor="filingYear">Filing Year:</label>
-            <input
-              type="number"
-              id="filingYear"
-              value={filingYear}
-              onChange={(e) => setFilingYear(e.target.value)}
-              placeholder="e.g., 2023"
-              min="2000"
-              max="2023"
-            />
+        
+        <div className="app-nav">
+          <div 
+            className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`}
+            onClick={() => setActiveTab('chat')}
+          >
+            Chat Interface
+          </div>
+          <div 
+            className={`nav-item ${activeTab === 'manage' ? 'active' : ''}`}
+            onClick={() => setActiveTab('manage')}
+          >
+            Company Management
           </div>
         </div>
       </header>
       
-      <div className="chat-container">
-        <div className="messages">
-          {messages.map((message, index) => (
-            <ChatMessage key={index} message={message} />
-          ))}
-          {loading && <div className="loading">Thinking...</div>}
-          <div ref={messagesEndRef} />
-        </div>
-        
-        <form className="input-form" onSubmit={handleSubmit}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about S&P 500 companies' 10-K filings..."
-            disabled={loading || !isConnected}
-          />
-          <button 
-            type="submit" 
-            disabled={loading || !input.trim() || !isConnected}
-            title={!isConnected ? "API is disconnected" : ""}
-          >
-            Send
-          </button>
-        </form>
-      </div>
+      {activeTab === 'chat' && (
+        <>
+          <div className="filters">
+            <CompanySelect 
+              companies={companies} 
+              selectedCompanies={selectedCompanies}
+              onChange={setSelectedCompanies}
+            />
+            <div className="filing-year">
+              <label htmlFor="filingYear">Filing Year:</label>
+              <input
+                type="number"
+                id="filingYear"
+                value={filingYear}
+                onChange={(e) => setFilingYear(e.target.value)}
+                placeholder="e.g., 2023"
+                min="2000"
+                max="2023"
+              />
+            </div>
+          </div>
+          
+          <div className="chat-container">
+            <div className="messages">
+              {messages.map((message, index) => (
+                <ChatMessage key={index} message={message} />
+              ))}
+              {loading && <div className="loading">Thinking...</div>}
+              <div ref={messagesEndRef} />
+            </div>
+            
+            <form className="input-form" onSubmit={handleSubmit}>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask about S&P 500 companies' 10-K filings..."
+                disabled={loading || !isConnected || companies.length === 0}
+              />
+              <button 
+                type="submit" 
+                disabled={loading || !input.trim() || !isConnected || companies.length === 0}
+                title={
+                  !isConnected 
+                    ? "API is disconnected" 
+                    : companies.length === 0 
+                      ? "No companies in database. Add companies first." 
+                      : ""
+                }
+              >
+                Send
+              </button>
+            </form>
+          </div>
+        </>
+      )}
+      
+      {activeTab === 'manage' && (
+        <CompanyManagement 
+          apiUrl={API_URL}
+          onCompaniesUpdated={handleCompaniesUpdated}
+        />
+      )}
     </div>
   );
 }

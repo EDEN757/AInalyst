@@ -23,6 +23,27 @@ def get_companies(db: Session, skip: int = 0, limit: int = 100) -> List[Company]
     return db.query(Company).order_by(Company.symbol).offset(skip).limit(limit).all()
 
 
+def delete_company(db: Session, company_id: int) -> bool:
+    """Delete a company and all its associated data (filings and chunks)"""
+    # First get all filings for this company
+    filings = db.query(Filing).filter(Filing.company_id == company_id).all()
+    
+    # Delete all chunks for each filing
+    for filing in filings:
+        db.query(TextChunk).filter(TextChunk.filing_id == filing.id).delete()
+    
+    # Delete all filings for this company
+    db.query(Filing).filter(Filing.company_id == company_id).delete()
+    
+    # Delete the company
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if company:
+        db.delete(company)
+        db.commit()
+        return True
+    return False
+
+
 # Filing operations
 def create_filing(
     db: Session,

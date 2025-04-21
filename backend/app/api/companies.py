@@ -1,17 +1,38 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
+import logging
 
-from ..db.database import get_db
+from ..db.database import get_db, Base, engine
 from ..db import crud
 from ..models.database_models import Company
+from data_updater.fetch_sec import fetch_companies_and_filings_by_symbol, DEMO_COMPANIES, fetch_companies_and_filings
+from data_updater.update_job import process_company_data
+
+# Ensure database tables exist
+try:
+    Base.metadata.create_all(bind=engine)
+    logging.getLogger(__name__).info("Database tables created if they didn't exist")
+except Exception as e:
+    logging.getLogger(__name__).error(f"Error creating database tables: {str(e)}")
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class AddCompanyRequest(BaseModel):
+    symbol: str
+    filing_years: Optional[List[int]] = None
+    filing_limit: Optional[int] = 2
+
+
+class AddDemoCompaniesRequest(BaseModel):
+    enabled: bool = True
 
 
 @router.get("/companies", response_model=List[dict])
@@ -40,7 +61,8 @@ async def get_companies(
                 "symbol": company.symbol,
                 "name": company.name,
                 "sector": company.sector,
-                "industry": company.industry
+                "industry": company.industry,
+                "filings_count": len(company.filings)
             }
             for company in companies
         ]
@@ -85,7 +107,9 @@ async def get_company_filings(symbol: str, request: Request, db: Session = Depen
                 "filing_date": filing.filing_date,
                 "fiscal_year": filing.fiscal_year,
                 "fiscal_period": filing.fiscal_period,
-                "accession_number": filing.accession_number
+                "accession_number": filing.accession_number,
+                "processed": filing.processed,
+                "chunks_count": len(filing.chunks)
             }
             for filing in company.filings
         ]
@@ -104,3 +128,295 @@ async def get_company_filings(symbol: str, request: Request, db: Session = Depen
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while fetching company filings.",
         )
+
+
+@router.post("/companies/add", status_code=status.HTTP_202_ACCEPTED)
+async def add_company(
+    data: AddCompanyRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Add a new company and its filings to the database"""
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f"POST /companies/add request from {client_ip} for symbol {data.symbol}")
+    
+    try:
+        # Check if company already exists
+        existing_company = crud.get_company_by_symbol(db=db, symbol=data.symbol)
+        if existing_company:
+            return {
+                "status": "success", 
+                "message": f"Company {data.symbol} already exists in the database",
+                "company": {
+                    "symbol": existing_company.symbol,
+                    "name": existing_company.name,
+                    "filings_count": len(existing_company.filings)
+                }
+            }
+        
+        # CRITICAL CHANGE: Instead of using FastAPI background tasks which are unreliable in Docker,
+        # we'll create a custom solution using threading and subprocess    
+        import subprocess
+        import threading
+        import json
+        
+        def run_in_thread():
+            logger.info(f"Starting company {data.symbol} loading in a separate process")
+            try:
+                # Create a temporary JSON file with the company data
+                import tempfile
+                import os
+                
+                # Execute a custom script to add just one company
+                cmd = ["python", "-c", f'''
+import sys
+sys.path.append("/app")
+from data_updater.fetch_sec import fetch_companies_and_filings_by_symbol
+from data_updater.update_job import process_company_data 
+from app.db.database import SessionLocal
+
+symbol = "{data.symbol}"
+filing_limit = {data.filing_limit or 2}
+filing_years = {json.dumps(data.filing_years) if data.filing_years else None}
+
+# Create DB session
+db = SessionLocal()
+
+try:
+    # Fetch the company data
+    print(f"Fetching data for company {{symbol}}")
+    company_data = fetch_companies_and_filings_by_symbol(symbol, filing_limit=filing_limit, filing_years=filing_years)
+    
+    if not company_data["companies"]:
+        print(f"No data found for company {{symbol}}")
+        sys.exit(1)
+        
+    # Process the company data
+    print(f"Processing data for company {{symbol}}")
+    result = process_company_data(db, company_data)
+    print(f"Company {{symbol}} processed: {{result}}")
+except Exception as e:
+    print(f"Error processing company {{symbol}}: {{str(e)}}")
+    sys.exit(1)
+finally:
+    db.close()
+''']
+                
+                # Run the script in a subprocess
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    logger.info(f"Company {data.symbol} loading completed successfully: {result.stdout}")
+                else:
+                    logger.error(f"Company {data.symbol} loading failed: {result.stderr}")
+            except Exception as e:
+                logger.error(f"Error starting company process: {str(e)}", exc_info=True)
+        
+        # Start the thread to run the process
+        thread = threading.Thread(target=run_in_thread)
+        thread.daemon = True
+        thread.start()
+        
+        return {
+            "status": "processing",
+            "message": f"Adding company {data.symbol} to database (processing in background)"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in add_company for {data.symbol}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error adding company: {str(e)}"
+        )
+
+
+@router.post("/companies/add-demo", status_code=status.HTTP_202_ACCEPTED)
+async def add_demo_companies(
+    data: AddDemoCompaniesRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Add demo companies (AAPL, MSFT, GOOGL) to the database"""
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f"POST /companies/add-demo request from {client_ip}")
+    
+    if data.enabled:
+        # Check if any companies already exist
+        existing_companies = crud.get_companies(db=db, limit=1)
+        if existing_companies:
+            logger.info("Companies already exist in the database, skipping demo data load")
+            return {
+                "status": "success",
+                "message": "Companies already exist in the database"
+            }
+        
+        # CRITICAL CHANGE: Instead of using background tasks which are unreliable in the Docker environment,
+        # we'll start a separate process to run the update job
+        import subprocess
+        import threading
+        
+        def run_in_thread():
+            logger.info("Starting demo companies loading in a separate process")
+            try:
+                # Execute the update_job script in a separate process
+                result = subprocess.run(
+                    ["python", "-m", "data_updater.update_job", "--mode", "DEMO"],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode == 0:
+                    logger.info(f"Demo companies loading completed successfully: {result.stdout}")
+                else:
+                    logger.error(f"Demo companies loading failed: {result.stderr}")
+            except Exception as e:
+                logger.error(f"Error starting demo companies process: {str(e)}", exc_info=True)
+        
+        # Start the thread to run the process
+        thread = threading.Thread(target=run_in_thread)
+        thread.daemon = True  # This allows the thread to exit when the main program exits
+        thread.start()
+        
+        demo_symbols = [company["symbol"] for company in DEMO_COMPANIES[:3]]
+        return {
+            "status": "processing",
+            "message": f"Adding demo companies {', '.join(demo_symbols)} to database (processing in background)"
+        }
+    else:
+        return {
+            "status": "skipped",
+            "message": "Demo companies flag set to false, no action taken"
+        }
+
+
+@router.delete("/companies/{symbol}", status_code=status.HTTP_200_OK)
+async def delete_company(symbol: str, request: Request, db: Session = Depends(get_db)):
+    """Delete a company and all its associated data"""
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f"DELETE /companies/{symbol} request from {client_ip}")
+    
+    try:
+        # Check if company exists
+        company = crud.get_company_by_symbol(db=db, symbol=symbol)
+        if not company:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Company with symbol {symbol} not found"
+            )
+        
+        # Delete the company and all associated filings/chunks
+        crud.delete_company(db=db, company_id=company.id)
+        
+        return {
+            "status": "success",
+            "message": f"Company {symbol} and all its data successfully deleted"
+        }
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting company {symbol}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting company: {str(e)}"
+        )
+
+
+async def fetch_and_process_company(symbol: str, filing_years=None, filing_limit=2):
+    """Fetch and process a company and its filings in the background"""
+    logger.info(f"Starting background task to add company {symbol}")
+    try:
+        # Create a new database session for the background task
+        db = SessionLocal()
+        
+        # Fetch company data from SEC
+        logger.info(f"Fetching data for company {symbol}")
+        company_data = fetch_companies_and_filings_by_symbol(symbol, filing_limit=filing_limit, filing_years=filing_years)
+        
+        if not company_data['companies']:
+            logger.error(f"No company data fetched for {symbol}")
+            if 'db' in locals():
+                db.close()
+            return {"status": "error", "message": f"No data found for company {symbol}"}
+        
+        # Process the company data
+        logger.info(f"Processing data for company {symbol}")
+        results = process_company_data(db, company_data)
+        
+        logger.info(f"Finished processing company {symbol}: {results}")
+        db.close()
+        return results
+    except Exception as e:
+        logger.error(f"Error in background task for company {symbol}: {str(e)}", exc_info=True)
+        if 'db' in locals():
+            db.close()
+        raise
+
+
+async def add_demo_companies_task():
+    """Add the demo companies (AAPL, MSFT, GOOGL) in the background"""
+    logger.info("Starting background task to add demo companies")
+    try:
+        # Create a new database session for the background task
+        db = SessionLocal()
+        
+        # Check if any companies already exist
+        existing = crud.get_companies(db=db, limit=1)
+        if existing:
+            logger.info("Companies already exist, skipping demo data loading")
+            db.close()
+            return {"status": "skipped", "message": "Companies already exist"}
+        
+        # Fetch only the first 3 demo companies (Apple, Microsoft, Google)
+        logger.info("Fetching demo companies data")
+        company_data = fetch_companies_and_filings(mode='DEMO', filing_limit=2)
+        
+        if not company_data['companies']:
+            logger.error("No demo company data fetched")
+            db.close()
+            return {"status": "error", "message": "No demo company data fetched"}
+        
+        # Process the company data
+        logger.info("Processing demo companies data")
+        results = process_company_data(db, company_data)
+        
+        logger.info(f"Finished processing demo companies: {results}")
+        db.close()
+        return results
+    except Exception as e:
+        logger.error(f"Error in background task for demo companies: {str(e)}", exc_info=True)
+        if 'db' in locals():
+            db.close()
+        raise
+
+
+async def check_demo_companies_added():
+    """Check if demo companies were added and run updater if not"""
+    import asyncio
+    import time
+    
+    logger.info("Fallback verification task started")
+    
+    # Wait a bit to give background task a chance to complete
+    await asyncio.sleep(30)
+    
+    # Check if companies exist
+    db = SessionLocal()
+    try:
+        companies = crud.get_companies(db=db, limit=1)
+        if not companies:
+            logger.warning("No companies found after background task, running updater directly")
+            
+            # Run the update job directly
+            from data_updater.update_job import run_update_job
+            start_time = time.time()
+            
+            result = run_update_job(mode='DEMO')
+            
+            duration = time.time() - start_time
+            logger.info(f"Direct update job completed in {duration:.2f} seconds with result: {result}")
+    except Exception as e:
+        logger.error(f"Error in fallback verification task: {str(e)}", exc_info=True)
+    finally:
+        db.close()

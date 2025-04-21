@@ -70,10 +70,12 @@ async def log_requests(request: Request, call_next):
             content={"detail": "Internal server error"},
         )
 
-# Startup event to check database connection
+# Startup event to check database connection and initialize tables
 @app.on_event("startup")
 async def startup_db_client():
     logger.info("Starting up application...")
+    
+    # First attempt - try standard database initialization
     try:
         # Verify database connection
         from sqlalchemy import text
@@ -83,6 +85,24 @@ async def startup_db_client():
                 logger.info("✅ Successfully connected to the database")
             else:
                 logger.error("❌ Failed to validate database connection")
+        
+        # Initialize database tables if they don't exist
+        from app.db.database import Base
+        from app.models.database_models import Company, Filing, TextChunk
+        logger.info("Creating database tables if they don't exist...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables created or verified")
+        
+        # Verify tables were actually created
+        try:
+            with engine.connect() as conn:
+                # Try to query the companies table
+                conn.execute(text("SELECT 1 FROM companies LIMIT 1"))
+                logger.info("✓ Verified companies table exists")
+        except Exception as table_error:
+            logger.warning(f"Companies table check failed: {str(table_error)}")
+            # If this fails, we'll try more aggressively below
+            raise
                 
         # Log configuration information
         logger.info(f"Application Mode: {settings.APP_MODE}")
@@ -90,9 +110,71 @@ async def startup_db_client():
         logger.info(f"Embedding Model: {settings.EMBEDDING_MODEL}")
         logger.info(f"Chat Provider: {settings.CHAT_PROVIDER}")
         logger.info(f"Chat Model: {settings.CHAT_MODEL}")
-    except SQLAlchemyError as e:
-        logger.error(f"❌ Database connection failed: {str(e)}")
+        
+    except Exception as e:
+        # Log the error but don't exit - try more aggressively
+        logger.error(f"❌ Database initialization error: {str(e)}")
         logger.error(traceback.format_exc())
+        
+        # Second attempt - more forceful approach with explicit SQL
+        logger.warning("Attempting alternative database initialization...")
+        try:
+            # Force-create tables with SQL
+            with engine.connect() as conn:
+                # Create vector extension first
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                
+                # Companies table
+                conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS companies (
+                    id SERIAL PRIMARY KEY,
+                    symbol VARCHAR(10) UNIQUE,
+                    name VARCHAR(255),
+                    sector VARCHAR(255),
+                    industry VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """))
+                
+                # Filings table
+                conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS filings (
+                    id SERIAL PRIMARY KEY,
+                    company_id INTEGER REFERENCES companies(id),
+                    filing_type VARCHAR(10),
+                    filing_date TIMESTAMP,
+                    filing_url TEXT,
+                    accession_number VARCHAR(100) UNIQUE,
+                    fiscal_year INTEGER,
+                    fiscal_period VARCHAR(10),
+                    processed BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """))
+                
+                # Text chunks table with vector support
+                conn.execute(text(f"""
+                CREATE TABLE IF NOT EXISTS text_chunks (
+                    id SERIAL PRIMARY KEY,
+                    filing_id INTEGER REFERENCES filings(id),
+                    chunk_index INTEGER,
+                    text_content TEXT,
+                    section VARCHAR(255),
+                    page_number INTEGER,
+                    embedded BOOLEAN DEFAULT FALSE,
+                    embedding vector({settings.EMBEDDING_DIMENSION}),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """))
+                
+                conn.commit()
+                logger.info("✅ Database tables created with SQL")
+                
+        except Exception as sql_error:
+            logger.error(f"💥 Failed to create tables with SQL: {str(sql_error)}")
+            logger.error(traceback.format_exc())
 
 # Shutdown event to clean up resources
 @app.on_event("shutdown")
