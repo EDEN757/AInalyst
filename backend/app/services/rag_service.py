@@ -66,11 +66,21 @@ def generate_answer(db: Session, user_query: UserQuery) -> ChatResponse:
         "Format your answers in plain text with line breaks for readability."
     )
     
+    # Prepare conversation history for context if available
+    conversation_context = ""
+    if user_query.previous_message and user_query.previous_response:
+        conversation_context = (
+            "Previous conversation:\n" +
+            f"User: {user_query.previous_message.content}\n" +
+            f"Assistant: {user_query.previous_response.content}\n\n"
+        )
+    
     answer = llm_clients.generate_chat_response(
         prompt=prompt, 
-        context=context, 
+        context=context,
         query=user_query.query,
-        config=settings
+        config=settings,
+        conversation_context=conversation_context
     )
     
     return ChatResponse(

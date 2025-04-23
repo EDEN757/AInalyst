@@ -92,7 +92,7 @@ def get_embedding(text: str, config: Settings) -> List[float]:
         raise ValueError(f"Unsupported embedding provider: {config.EMBEDDING_PROVIDER}")
 
 
-def generate_chat_response(prompt: str, context: str, query: str, config: Settings) -> str:
+def generate_chat_response(prompt: str, context: str, query: str, config: Settings, conversation_context: str = "") -> str:
     """Generate a chat response using the configured chat provider and model.
     
     Args:
@@ -100,6 +100,7 @@ def generate_chat_response(prompt: str, context: str, query: str, config: Settin
         context: The retrieved documents/context to inform the response
         query: The user query
         config: The application configuration
+        conversation_context: Optional previous conversation context
         
     Returns:
         The generated text response
@@ -118,13 +119,13 @@ def generate_chat_response(prompt: str, context: str, query: str, config: Settin
             # Create OpenAI client with new API style
             client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
             
-            full_prompt = f"{prompt}\n\nContext:\n{context}\n\nUser Query: {query}\n\nAnswer:"
+            user_content = f"{conversation_context}Context:\n{context}\n\nUser Query: {query}"
             
             response = client.chat.completions.create(
                 model=config.CHAT_MODEL,
                 messages=[
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": f"Context:\n{context}\n\nUser Query: {query}"}
+                    {"role": "user", "content": user_content}
                 ],
                 temperature=0.3,
                 max_tokens=500
@@ -144,7 +145,7 @@ def generate_chat_response(prompt: str, context: str, query: str, config: Settin
         genai.configure(api_key=config.GOOGLE_API_KEY)
         
         try:
-            full_prompt = f"{prompt}\n\nContext:\n{context}\n\nUser Query: {query}\n\nAnswer:"
+            full_prompt = f"{prompt}\n\n{conversation_context}Context:\n{context}\n\nUser Query: {query}\n\nAnswer:"
             
             model = genai.GenerativeModel(config.CHAT_MODEL)
             response = model.generate_content(full_prompt)
@@ -162,7 +163,7 @@ def generate_chat_response(prompt: str, context: str, query: str, config: Settin
         try:
             client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
             
-            full_prompt = f"{prompt}\n\nContext:\n{context}\n\nUser Query: {query}\n\nAnswer:"
+            user_content = f"{conversation_context}Context:\n{context}\n\nUser Query: {query}"
             
             response = client.messages.create(
                 model=config.CHAT_MODEL,
@@ -170,7 +171,7 @@ def generate_chat_response(prompt: str, context: str, query: str, config: Settin
                 temperature=0.3,
                 system=prompt,
                 messages=[
-                    {"role": "user", "content": f"Context:\n{context}\n\nUser Query: {query}"}
+                    {"role": "user", "content": user_content}
                 ]
             )
             
