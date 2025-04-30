@@ -147,20 +147,6 @@ function App() {
         query.filing_year = parseInt(filingYear);
       }
       
-      // Add conversation context - get the two previous messages if they exist
-      const previousMessages = messages.filter(m => m.role !== 'system');
-      if (previousMessages.length >= 2) {
-        // Add the previous user message and assistant response for context
-        // Get the last two messages (excluding the current one we just added)
-        const prevUserMsg = previousMessages[previousMessages.length - 1];
-        const prevAssistantMsg = previousMessages[previousMessages.length - 2];
-        
-        if (prevUserMsg.role === 'user' && prevAssistantMsg.role === 'assistant') {
-          query.previous_message = prevUserMsg;
-          query.previous_response = prevAssistantMsg;
-        }
-      }
-      
       console.log('Sending chat query:', query);
       
       // Send to API with timeout
