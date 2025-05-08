@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import '../App.css';
 
@@ -12,6 +12,9 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
   const [filings, setFilings] = useState([]);
   const [isFirstVisit, setIsFirstVisit] = useState(true);
   const [processingCompany, setProcessingCompany] = useState(null);
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvUploading, setCsvUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   // Fetch companies on component mount
   useEffect(() => {
@@ -161,6 +164,99 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
       setLoading(false);
     }
   };
+  
+  const handleCsvFileChange = (e) => {
+    if (e.target.files.length > 0) {
+      setCsvFile(e.target.files[0]);
+    } else {
+      setCsvFile(null);
+    }
+  };
+  
+  const handleCsvUpload = async (e) => {
+    e.preventDefault();
+    
+    if (!csvFile) {
+      alert('Please select a CSV file first');
+      return;
+    }
+    
+    if (!csvFile.name.endsWith('.csv')) {
+      alert('Please select a CSV file');
+      return;
+    }
+    
+    setCsvUploading(true);
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Create form data object
+      const formData = new FormData();
+      formData.append('file', csvFile);
+      
+      // Upload the CSV file
+      const response = await axios.post(
+        `${apiUrl}/api/v1/companies/import-csv`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      );
+      
+      console.log('CSV import response:', response.data);
+      
+      if (response.data.status === 'processing') {
+        alert(`Importing ${response.data.companies.length} companies from CSV. Processing in background. Please check back in a few minutes.`);
+      }
+      
+      // Clear the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setCsvFile(null);
+      
+      // Refresh companies list after a short delay
+      setTimeout(fetchCompanies, 3000);
+      
+    } catch (error) {
+      console.error('Error uploading CSV:', error);
+      setError(`Error uploading CSV: ${error.response?.data?.detail || error.message}`);
+    } finally {
+      setCsvUploading(false);
+      setLoading(false);
+    }
+  };
+  
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await axios.get(`${apiUrl}/api/v1/companies/csv-template`);
+      
+      // Create a blob from the CSV content
+      const blob = new Blob([response.data.content], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      
+      // Create a temporary link element and trigger download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = response.data.filename;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      // Show instructions
+      alert(response.data.instructions);
+      
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      alert('Error downloading CSV template');
+    }
+  };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -289,6 +385,41 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
                 {loading && processingCompany === newSymbol ? 'Adding...' : 'Add Company'}
               </button>
             </form>
+            
+            <div className="csv-upload-section">
+              <h4>Bulk Import from CSV</h4>
+              <div className="csv-template-info">
+                <p>Import multiple companies at once from a CSV file</p>
+                <button 
+                  onClick={handleDownloadTemplate} 
+                  className="button secondary"
+                  disabled={loading}
+                >
+                  Download CSV Template
+                </button>
+              </div>
+              
+              <form onSubmit={handleCsvUpload} className="csv-upload-form">
+                <div className="form-group">
+                  <label htmlFor="csvFile">Select CSV File:</label>
+                  <input
+                    type="file"
+                    id="csvFile"
+                    onChange={handleCsvFileChange}
+                    accept=".csv"
+                    ref={fileInputRef}
+                    disabled={loading}
+                  />
+                </div>
+                <button 
+                  type="submit" 
+                  className="button primary"
+                  disabled={loading || !csvFile}
+                >
+                  {csvUploading ? 'Uploading...' : 'Upload CSV'}
+                </button>
+              </form>
+            </div>
           </div>
         </div>
         
