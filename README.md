@@ -33,7 +33,6 @@ AInalyst/
 │   ├── data_updater/
 │   │   ├── __init__.py
 │   │   ├── create_embeddings.py    # Uses ONLY Embedding config
-│   │   ├── company_import_template.csv  # Template for CSV import
 │   │   ├── fetch_sec.py            # Fetches SEC filings
 │   │   ├── process_docs.py         # Processes filings into chunks
 │   │   └── update_job.py           # Main update pipeline
@@ -55,6 +54,7 @@ AInalyst/
 │   └── package.json
 ├── postgres/
 │   └── init.sql                    # pgvector extension setup
+├── companies_to_import.csv         # CSV file with companies to import
 ├── .env.example                    # Example environment variables
 ├── docker-compose.yml              # Container orchestration
 ├── LICENSE                         # MIT License
@@ -218,7 +218,7 @@ docker-compose exec backend python /app/data_updater/update_job.py --skip-embedd
 
 ### Importing Companies via CSV
 
-You can import multiple companies at once by uploading a CSV file through the Company Management page. 
+You can import multiple companies at once by editing the `companies_to_import.csv` file in the project root directory and clicking "Download from CSV" in the Company Management interface.
 
 The CSV file must have this format:
 ```
@@ -236,6 +236,7 @@ JPM,1
 - Keep the header row (`ticker,num_10ks`) in your CSV
 - Ticker symbols are case-insensitive
 - Companies already in the database will be skipped
+- Edit `companies_to_import.csv` in the project root to add the companies you want
 - Processing happens in the background - check back later to see imported companies
 
 ## Custom Configuration

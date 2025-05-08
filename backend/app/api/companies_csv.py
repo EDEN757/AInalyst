@@ -17,60 +17,60 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.post("/companies/import-csv", status_code=status.HTTP_202_ACCEPTED)
-async def import_companies_from_csv(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db)
-):
-    """Import companies from a CSV file and add them to the database"""
-    logger.info(f"Processing CSV import: {file.filename}")
+@router.post("/companies/import-from-csv", status_code=status.HTTP_202_ACCEPTED)
+async def import_companies_from_csv(db: Session = Depends(get_db)):
+    """Import companies from the CSV file in the project root"""
+    import os
+
+    # Get the CSV file path - go up to project root directory
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    csv_path = os.path.join(project_root, "companies_to_import.csv")
     
-    if not file.filename.endswith('.csv'):
+    logger.info(f"Processing CSV import from: {csv_path}")
+    
+    if not os.path.exists(csv_path):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File must be a CSV"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="CSV file not found in project root. Please create 'companies_to_import.csv'"
         )
-    
-    # Read CSV file
-    contents = await file.read()
     
     # Process CSV data
     companies_to_import = []
     try:
-        # Decode and parse CSV
-        decoded_content = contents.decode('utf-8')
-        csv_reader = csv.reader(io.StringIO(decoded_content))
-        
-        # Skip header row
-        header = next(csv_reader)
-        expected_header = ["ticker", "num_10ks"]
-        
-        # Validate header
-        if not all(column in header for column in expected_header):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"CSV must have the following columns: {', '.join(expected_header)}"
-            )
-        
-        # Parse rows
-        for row in csv_reader:
-            if len(row) < 2 or not row[0] or not row[1]:
-                continue  # Skip empty rows
+        # Read and parse CSV
+        with open(csv_path, 'r') as file:
+            csv_reader = csv.reader(file)
             
-            ticker = row[0].strip().upper()
-            try:
-                num_10ks = int(row[1].strip())
-                if num_10ks <= 0:
-                    logger.warning(f"Skipping {ticker} - invalid num_10ks value: {num_10ks}")
+            # Skip header row
+            header = next(csv_reader)
+            expected_header = ["ticker", "num_10ks"]
+            
+            # Validate header
+            if not all(column in header for column in expected_header):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"CSV must have the following columns: {', '.join(expected_header)}"
+                )
+            
+            # Parse rows
+            for row in csv_reader:
+                if len(row) < 2 or not row[0] or not row[1]:
+                    continue  # Skip empty rows
+                
+                ticker = row[0].strip().upper()
+                try:
+                    num_10ks = int(row[1].strip())
+                    if num_10ks <= 0:
+                        logger.warning(f"Skipping {ticker} - invalid num_10ks value: {num_10ks}")
+                        continue
+                except ValueError:
+                    logger.warning(f"Skipping {ticker} - invalid num_10ks value: {row[1]}")
                     continue
-            except ValueError:
-                logger.warning(f"Skipping {ticker} - invalid num_10ks value: {row[1]}")
-                continue
-            
-            companies_to_import.append({
-                "symbol": ticker,
-                "filing_limit": num_10ks
-            })
+                
+                companies_to_import.append({
+                    "symbol": ticker,
+                    "filing_limit": num_10ks
+                })
     
     except Exception as e:
         logger.error(f"Error parsing CSV: {str(e)}")
@@ -162,21 +162,11 @@ finally:
 @router.get("/companies/csv-template")
 async def get_csv_template():
     """Return a CSV template for company import"""
-    # Read from the template file
-    try:
-        import os
-        template_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                                    "data_updater", "company_import_template.csv")
-        
-        with open(template_path, "r") as f:
-            csv_content = f.read()
-    except Exception as e:
-        logger.error(f"Error reading CSV template: {str(e)}")
-        # Fallback content if file can't be read
-        csv_content = "ticker,num_10ks\nAAPL,2\nMSFT,1\nGOOGL,2"
+    # Basic template content
+    csv_content = "ticker,num_10ks\nAAPL,2\nMSFT,1\nGOOGL,2"
     
     return {
         "content": csv_content,
-        "filename": "company_import_template.csv",
-        "instructions": "CSV should have two columns:\n1. ticker: Company ticker symbol (e.g., AAPL)\n2. num_10ks: Number of 10-K filings to download (1-5)"
+        "filename": "companies_to_import.csv",
+        "instructions": "Place this file in the project root directory. CSV should have two columns:\n1. ticker: Company ticker symbol (e.g., AAPL)\n2. num_10ks: Number of 10-K filings to download (1-5)"
     }
