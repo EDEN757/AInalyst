@@ -138,66 +138,96 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
     
     # Start background processing
     def process_companies_in_thread():
-        for company in companies_to_import:
-            symbol = company["symbol"]
-            filing_limit = company["filing_limit"]
-            
-            try:
-                logger.info(f"Processing company {symbol} with filing_limit={filing_limit}")
+        # Filter out companies that already exist to avoid redundant processing
+        companies_to_process = []
+        symbols_to_process = []
+        
+        # First, check which companies already exist
+        local_db = SessionLocal()
+        try:
+            for company in companies_to_import:
+                symbol = company["symbol"]
+                filing_limit = company["filing_limit"]
                 
-                # Check if company already exists
-                local_db = SessionLocal()
                 existing_company = crud.get_company_by_symbol(db=local_db, symbol=symbol)
                 if existing_company:
                     logger.info(f"Company {symbol} already exists, skipping")
-                    local_db.close()
-                    continue
-                local_db.close()
-                
-                # Execute a custom script to add the company
-                cmd = ["python", "-c", f'''
+                else:
+                    companies_to_process.append(company)
+                    symbols_to_process.append(symbol)
+        finally:
+            local_db.close()
+        
+        if not companies_to_process:
+            logger.info("No new companies to process, all already exist in database")
+            return
+            
+        logger.info(f"Processing {len(companies_to_process)} companies: {', '.join(symbols_to_process)}")
+        
+        # Create a Python script that will process all companies at once
+        script_content = f'''
 import sys
+import json
 sys.path.append("/app")
 from data_updater.fetch_sec import fetch_companies_and_filings_by_symbol
 from data_updater.update_job import process_company_data 
 from app.db.database import SessionLocal
 
-symbol = "{symbol}"
-filing_limit = {filing_limit}
+# Companies to process - this is a list of dictionaries with symbol and filing_limit
+companies = {json.dumps(companies_to_process)}
 
-# Create DB session
-db = SessionLocal()
-
-try:
-    # Fetch the company data
-    print(f"Fetching data for company {{symbol}}")
-    company_data = fetch_companies_and_filings_by_symbol(symbol, filing_limit=filing_limit)
+for company in companies:
+    symbol = company["symbol"]
+    filing_limit = company["filing_limit"]
     
-    if not company_data["companies"]:
-        print(f"No data found for company {{symbol}}")
-        sys.exit(1)
+    # Create a new DB session for each company
+    db = SessionLocal()
+    
+    try:
+        print(f"Fetching data for company {{symbol}}")
+        company_data = fetch_companies_and_filings_by_symbol(symbol, filing_limit=filing_limit)
         
-    # Process the company data
-    print(f"Processing data for company {{symbol}}")
-    result = process_company_data(db, company_data)
-    print(f"Company {{symbol}} processed: {{result}}")
-except Exception as e:
-    print(f"Error processing company {{symbol}}: {{str(e)}}")
-    sys.exit(1)
-finally:
-    db.close()
-''']
+        if not company_data["companies"]:
+            print(f"No data found for company {{symbol}}")
+            continue
+            
+        print(f"Processing data for company {{symbol}}")
+        result = process_company_data(db, company_data)
+        print(f"Company {{symbol}} processed: {{result}}")
+    except Exception as e:
+        print(f"Error processing company {{symbol}}: {{str(e)}}")
+    finally:
+        db.close()
+
+print(f"Finished processing {{len(companies)}} companies")
+'''
+        
+        # Write the script to a temporary file
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.py', delete=False, mode='w') as temp_file:
+            temp_file.write(script_content)
+            script_path = temp_file.name
+        
+        try:
+            # Execute the script that processes all companies
+            cmd = ["python", script_path]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                logger.info(f"Companies processed successfully: {result.stdout}")
+            else:
+                logger.error(f"Error processing companies: {result.stderr}")
                 
-                # Run the script in a subprocess
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                
-                if result.returncode == 0:
-                    logger.info(f"Company {symbol} loading completed successfully: {result.stdout}")
-                else:
-                    logger.error(f"Company {symbol} loading failed: {result.stderr}")
-                    
+        except Exception as e:
+            logger.error(f"Error executing script to process companies: {str(e)}", exc_info=True)
+        finally:
+            # Clean up the temporary file
+            import os
+            try:
+                os.unlink(script_path)
             except Exception as e:
-                logger.error(f"Error processing company {symbol}: {str(e)}", exc_info=True)
+                logger.error(f"Error removing temporary script: {str(e)}")
+                
     
     # Start processing in background
     thread = threading.Thread(target=process_companies_in_thread)
