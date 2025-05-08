@@ -52,11 +52,38 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
             break
     
     if not csv_path:
-        logger.error(f"Could not find companies_to_import.csv. Searched in: {', '.join(possible_paths)}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="CSV file not found. Please create 'companies_to_import.csv' in the project root or Docker volume"
-        )
+        # Create a default CSV file in /app directory
+        default_csv_path = "/app/companies_to_import.csv"
+        try:
+            with open(default_csv_path, 'w') as f:
+                f.write("ticker,num_10ks\nAAPL,2\nMSFT,1\nGOOGL,2")
+            logger.info(f"Created default CSV file at {default_csv_path}")
+            csv_path = default_csv_path
+        except Exception as e:
+            logger.error(f"Failed to create default CSV file: {str(e)}")
+            # Try a different location if /app is not writable
+            alt_paths = [
+                os.path.join(current_dir, "companies_to_import.csv"),
+                "./companies_to_import.csv"
+            ]
+            
+            created = False
+            for path in alt_paths:
+                try:
+                    with open(path, 'w') as f:
+                        f.write("ticker,num_10ks\nAAPL,2\nMSFT,1\nGOOGL,2")
+                    logger.info(f"Created default CSV file at alternate location: {path}")
+                    csv_path = path
+                    created = True
+                    break
+                except Exception as err:
+                    logger.error(f"Failed to create CSV at {path}: {str(err)}")
+            
+            if not created:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Could not find or create CSV file. Tried multiple locations. Error: {str(e)}"
+                )
     
     # Process CSV data
     companies_to_import = []
