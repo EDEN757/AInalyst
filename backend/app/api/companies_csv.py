@@ -22,16 +22,40 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
     """Import companies from the CSV file in the project root"""
     import os
 
-    # Get the CSV file path - go up to project root directory
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    csv_path = os.path.join(project_root, "companies_to_import.csv")
+    # Debug the current directory and environment
+    current_dir = os.getcwd()
+    logger.info(f"Current working directory: {current_dir}")
     
-    logger.info(f"Processing CSV import from: {csv_path}")
+    # Try multiple possible locations for the CSV file
+    possible_paths = [
+        # Standard project root (when running locally)
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "companies_to_import.csv"),
+        # Docker container root
+        "/app/companies_to_import.csv",
+        # Docker volume mount (if configured in docker-compose)
+        "/data/companies_to_import.csv",
+        # Current working directory
+        os.path.join(current_dir, "companies_to_import.csv"),
+        # One level up from current directory
+        os.path.join(os.path.dirname(current_dir), "companies_to_import.csv")
+    ]
     
-    if not os.path.exists(csv_path):
+    # Log all paths we're checking
+    for path in possible_paths:
+        logger.info(f"Checking path: {path}, exists: {os.path.exists(path)}")
+    
+    csv_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            csv_path = path
+            logger.info(f"Found CSV file at: {csv_path}")
+            break
+    
+    if not csv_path:
+        logger.error(f"Could not find companies_to_import.csv. Searched in: {', '.join(possible_paths)}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="CSV file not found in project root. Please create 'companies_to_import.csv'"
+            detail="CSV file not found. Please create 'companies_to_import.csv' in the project root or Docker volume"
         )
     
     # Process CSV data
