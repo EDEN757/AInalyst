@@ -315,6 +315,20 @@ body {
   border-top: 1px solid #ddd;
 }
 
+.csv-upload-section {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid #ddd;
+}
+
+.csv-template-info {
+  margin-bottom: 15px;
+}
+
+.csv-upload-form {
+  margin-top: 15px;
+}
+
 .form-group {
   margin-bottom: 15px;
 }

@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 import traceback
 import sys
 
-from .api import chat, companies
+from .api import chat, companies, companies_csv
 from .core.config import settings
 from .db.database import engine
 
@@ -39,6 +39,7 @@ app.add_middleware(
 # Include routers
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(companies.router, prefix="/api/v1", tags=["companies"])
+app.include_router(companies_csv.router, prefix="/api/v1", tags=["companies-csv"])
 
 # Middleware for request logging
 @app.middleware("http")

@@ -200,6 +200,28 @@ docker-compose exec backend python /app/data_updater/update_job.py --skip-proces
 docker-compose exec backend python /app/data_updater/update_job.py --skip-embeddings
 ```
 
+### Importing Companies via CSV
+
+You can import multiple companies at once by uploading a CSV file through the Company Management page. 
+
+The CSV file must have this format:
+```
+ticker,num_10ks
+AAPL,2
+MSFT,3
+JPM,1
+```
+
+**Column Definitions:**
+- `ticker`: The company's stock ticker symbol (e.g., AAPL for Apple)
+- `num_10ks`: Number of 10-K filings to download (1-5)
+
+**Important Notes:**
+- Keep the header row (`ticker,num_10ks`) in your CSV
+- Ticker symbols are case-insensitive
+- Companies already in the database will be skipped
+- Processing happens in the background - check back later to see imported companies
+
 ## Custom Configuration
 
 ### Changing Embedding Provider
