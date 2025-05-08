@@ -11,7 +11,8 @@ AInalyst/
 │   │   ├── api/
 │   │   │   ├── __init__.py
 │   │   │   ├── chat.py             # Chat endpoint for RAG interactions
-│   │   │   └── companies.py        # Endpoints for company data
+│   │   │   ├── companies.py        # Endpoints for company data
+│   │   │   └── companies_csv.py    # CSV import endpoint for companies
 │   │   ├── core/
 │   │   │   ├── __init__.py
 │   │   │   └── config.py           # Configuration with Embed/Chat separation
@@ -32,6 +33,7 @@ AInalyst/
 │   ├── data_updater/
 │   │   ├── __init__.py
 │   │   ├── create_embeddings.py    # Uses ONLY Embedding config
+│   │   ├── company_import_template.csv  # Template for CSV import
 │   │   ├── fetch_sec.py            # Fetches SEC filings
 │   │   ├── process_docs.py         # Processes filings into chunks
 │   │   └── update_job.py           # Main update pipeline
