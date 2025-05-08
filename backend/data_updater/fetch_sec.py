@@ -215,6 +215,52 @@ def fetch_companies_and_filings(mode: str = 'DEMO', filing_limit: int = 2) -> Di
     return results
 
 
+def lookup_company_cik(symbol: str) -> Optional[str]:
+    """Look up a company's CIK number by its ticker symbol.
+    
+    Args:
+        symbol: Company stock symbol (e.g., "AAPL")
+        
+    Returns:
+        CIK number as a string, or None if not found
+    """
+    # First check our demo list for a quick match
+    demo_company = next((c for c in DEMO_COMPANIES if c['symbol'] == symbol), None)
+    if demo_company:
+        return demo_company['cik']
+    
+    # If not in demo list, try to look it up from SEC
+    try:
+        # Use the SEC's ticker-to-CIK mapping endpoint
+        url = "https://www.sec.gov/files/company_tickers.json"
+        response = requests.get(url, headers=SEC_HEADERS)
+        response.raise_for_status()
+        
+        # Respect SEC rate limits
+        time.sleep(0.1)
+        
+        # The SEC returns a JSON object with numeric keys
+        companies_data = response.json()
+        
+        # Convert to list for easier searching
+        companies_list = [companies_data[str(key)] for key in companies_data]
+        
+        # Find matching ticker (case-insensitive)
+        for company in companies_list:
+            if company.get('ticker', '').upper() == symbol.upper():
+                # Format CIK as a string with leading zeros (10 digits)
+                cik = str(company.get('cik_str', '')).zfill(10)
+                logger.info(f"Found CIK {cik} for {symbol} via SEC API")
+                return cik
+                
+        logger.warning(f"Could not find CIK for {symbol} via SEC API")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error looking up CIK for {symbol}: {str(e)}")
+        return None
+
+
 def fetch_companies_and_filings_by_symbol(symbol: str, filing_limit: int = 2, filing_years: List[int] = None) -> Dict[str, List]:
     """Fetch company information and filings for a specific ticker symbol.
     
@@ -234,25 +280,28 @@ def fetch_companies_and_filings_by_symbol(symbol: str, filing_limit: int = 2, fi
     logger.info(f"Processing company with symbol: {symbol}")
     
     try:
-        # First, find this company in our demo list
-        demo_company = next((c for c in DEMO_COMPANIES if c['symbol'] == symbol), None)
+        # Look up the company's CIK
+        cik = lookup_company_cik(symbol)
         
-        if demo_company:
-            # Use the demo company data if available
-            company = demo_company
-            logger.info(f"Found company {symbol} in demo list with CIK {company['cik']}")
-        else:
-            # For now, we'll use a placeholder and the first demo company's CIK for testing
-            # In a real implementation, this would use a proper CIK lookup service
-            placeholder_cik = DEMO_COMPANIES[0]['cik']  # Use Apple's CIK as a fallback for testing
-            
+        if cik:
             company = {
                 'symbol': symbol,
-                'name': f"{symbol} Inc.",
-                'cik': placeholder_cik  # Using a placeholder CIK for testing
+                'name': f"{symbol}",  # We'll get a better name when we fetch submissions
+                'cik': cik
             }
             
-            logger.info(f"Using placeholder CIK {placeholder_cik} for company {symbol}")
+            logger.info(f"Using CIK {cik} for company {symbol}")
+            
+            # Try to get a better company name from the submissions data
+            try:
+                submissions = get_company_submissions(cik)
+                if submissions and 'name' in submissions:
+                    company['name'] = submissions['name']
+            except Exception as e:
+                logger.error(f"Error getting better name for {symbol}: {str(e)}")
+        else:
+            logger.error(f"Could not find CIK for {symbol}. Cannot fetch filings.")
+            return results
             
         # Add company to results
         results['companies'].append({
