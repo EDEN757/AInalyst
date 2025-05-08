@@ -10,7 +10,8 @@ from typing import List
 
 from ..db.database import get_db, SessionLocal
 from ..db import crud
-from data_updater.fetch_sec import fetch_companies_and_filings_by_symbol
+from data_updater.fetch_sec import fetch_companies_and_filings_by_symbol, fetch_companies_and_filings
+from data_updater.update_job import process_company_data
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -136,97 +137,68 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
             detail="No valid companies found in CSV"
         )
     
-    # Start background processing
+    # Process companies directly instead of using a subprocess
     def process_companies_in_thread():
-        # Filter out companies that already exist to avoid redundant processing
-        companies_to_process = []
+        # Create a custom company data structure matching what the process_company_data function expects
+        combined_data = {
+            'companies': [],
+            'filings': []
+        }
+        
+        # List to track which companies we're going to process
         symbols_to_process = []
         
-        # First, check which companies already exist
-        local_db = SessionLocal()
+        # Check which companies already exist and create a list of new ones to process
+        db = SessionLocal()
         try:
             for company in companies_to_import:
                 symbol = company["symbol"]
                 filing_limit = company["filing_limit"]
                 
-                existing_company = crud.get_company_by_symbol(db=local_db, symbol=symbol)
+                existing_company = crud.get_company_by_symbol(db=db, symbol=symbol)
                 if existing_company:
                     logger.info(f"Company {symbol} already exists, skipping")
                 else:
-                    companies_to_process.append(company)
+                    logger.info(f"Adding {symbol} to batch processing list with filing_limit={filing_limit}")
                     symbols_to_process.append(symbol)
-        finally:
-            local_db.close()
-        
-        if not companies_to_process:
-            logger.info("No new companies to process, all already exist in database")
-            return
+                    
+                    # Fetch this company's data and add to our combined batch
+                    try:
+                        logger.info(f"Fetching data for {symbol}")
+                        company_data = fetch_companies_and_filings_by_symbol(symbol, filing_limit=filing_limit)
+                        
+                        if company_data['companies']:
+                            # Add this company's data to our combined batch
+                            combined_data['companies'].extend(company_data['companies'])
+                            combined_data['filings'].extend(company_data['filings'])
+                            logger.info(f"Added {symbol} data with {len(company_data['filings'])} filings to batch")
+                        else:
+                            logger.warning(f"No data found for {symbol}")
+                    except Exception as e:
+                        logger.error(f"Error fetching data for {symbol}: {str(e)}")
             
-        logger.info(f"Processing {len(companies_to_process)} companies: {', '.join(symbols_to_process)}")
-        
-        # Create a Python script that will process all companies at once
-        script_content = f'''
-import sys
-import json
-sys.path.append("/app")
-from data_updater.fetch_sec import fetch_companies_and_filings_by_symbol
-from data_updater.update_job import process_company_data 
-from app.db.database import SessionLocal
-
-# Companies to process - this is a list of dictionaries with symbol and filing_limit
-companies = {json.dumps(companies_to_process)}
-
-for company in companies:
-    symbol = company["symbol"]
-    filing_limit = company["filing_limit"]
-    
-    # Create a new DB session for each company
-    db = SessionLocal()
-    
-    try:
-        print(f"Fetching data for company {{symbol}}")
-        company_data = fetch_companies_and_filings_by_symbol(symbol, filing_limit=filing_limit)
-        
-        if not company_data["companies"]:
-            print(f"No data found for company {{symbol}}")
-            continue
+            if not symbols_to_process:
+                logger.info("No new companies to process, all already exist in database")
+                return
+                
+            logger.info(f"About to process {len(symbols_to_process)} companies in a single batch: {', '.join(symbols_to_process)}")
             
-        print(f"Processing data for company {{symbol}}")
-        result = process_company_data(db, company_data)
-        print(f"Company {{symbol}} processed: {{result}}")
-    except Exception as e:
-        print(f"Error processing company {{symbol}}: {{str(e)}}")
-    finally:
-        db.close()
-
-print(f"Finished processing {{len(companies)}} companies")
-'''
-        
-        # Write the script to a temporary file
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.py', delete=False, mode='w') as temp_file:
-            temp_file.write(script_content)
-            script_path = temp_file.name
-        
-        try:
-            # Execute the script that processes all companies
-            cmd = ["python", script_path]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                logger.info(f"Companies processed successfully: {result.stdout}")
+            # Now process all the data in a single operation
+            if combined_data['companies'] and combined_data['filings']:
+                logger.info(f"Processing batch with {len(combined_data['companies'])} companies and {len(combined_data['filings'])} filings")
+                try:
+                    # Use the existing process_company_data function to handle all companies at once
+                    result = process_company_data(db, combined_data)
+                    logger.info(f"Batch processing completed successfully: {result}")
+                except Exception as e:
+                    logger.error(f"Error in batch processing: {str(e)}", exc_info=True)
             else:
-                logger.error(f"Error processing companies: {result.stderr}")
+                logger.warning("No data to process after fetching")
                 
         except Exception as e:
-            logger.error(f"Error executing script to process companies: {str(e)}", exc_info=True)
+            logger.error(f"Error in company processing thread: {str(e)}", exc_info=True)
         finally:
-            # Clean up the temporary file
-            import os
-            try:
-                os.unlink(script_path)
-            except Exception as e:
-                logger.error(f"Error removing temporary script: {str(e)}")
+            db.close()
                 
     
     # Start processing in background
