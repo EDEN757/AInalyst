@@ -69,7 +69,7 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                 os.path.join(current_dir, "companies_to_import.csv"),
                 "./companies_to_import.csv"
             ]
-
+            
             created = False
             for path in alt_paths:
                 try:
@@ -99,9 +99,9 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
             header = next(csv_reader)
             expected_header_old = ["ticker", "doc_type", "date_range"]
             expected_header_new = ["ticker", "doc_type", "start_date", "end_date"]
-
+            
             # Validate header for either format
-            if not (all(column in header for column in expected_header_old) or
+            if not (all(column in header for column in expected_header_old) or 
                     all(column in header for column in expected_header_new)):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -168,30 +168,33 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
     
     # Process companies directly instead of using a subprocess
     def process_companies_in_thread():
-        # List to track which companies we're going to process
+        # List to track processed companies
         processed_count = 0
-
-        # Check which companies already exist and create a list of new ones to process
-        db = SessionLocal()
-        try:
-            for company in companies_to_import:
+        
+        # Process each company individually with its own database session
+        for company in companies_to_import:
+            # Create a fresh database session for each company
+            db = SessionLocal()
+            
+            try:
                 symbol = company["symbol"]
                 doc_type = company["doc_type"]
                 start_date = company["start_date"]
                 end_date = company["end_date"]
-
+                
                 # Create a query description for logging
                 query_desc = f"{symbol}:{doc_type} ({start_date} to {end_date})"
-
+                logger.info(f"Starting to process: {query_desc}")
+                
                 existing_company = crud.get_company_by_symbol(db=db, symbol=symbol)
                 if existing_company:
                     logger.info(f"Company {symbol} already exists, will add filings if they don't exist")
-
-                # Process this company immediately instead of batching
+                
+                # Process this company immediately
                 try:
                     logger.info(f"Fetching data for {query_desc}")
-
-                    # Use the new query-based function to fetch filings
+                    
+                    # Use the query-based function to fetch filings for this specific company
                     company_data = fetch_filings_by_query_params(
                         ticker=symbol,
                         doc_type=doc_type,
@@ -199,13 +202,12 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                         end_date=end_date,
                         limit=50  # Reasonable limit to avoid overwhelming the system
                     )
-
+                    
                     if company_data['companies'] and company_data['filings']:
-                        logger.info(f"Processing {symbol} with {len(company_data['filings'])} {doc_type} filings")
-
-                        # Process each company independently to avoid mixing data
+                        logger.info(f"Processing {symbol} with {len(company_data['filings'])} {doc_type} filings from {start_date} to {end_date}")
+                        
+                        # Process this specific company's data
                         try:
-                            # Process just this company's data
                             result = process_company_data(db, company_data)
                             logger.info(f"Processed {symbol} successfully: {result}")
                             processed_count += 1
@@ -215,13 +217,19 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                         logger.warning(f"No data found for {query_desc}")
                 except Exception as e:
                     logger.error(f"Error fetching data for {query_desc}: {str(e)}")
-
-            logger.info(f"Completed processing {processed_count} out of {len(companies_to_import)} companies/queries")
-
-        except Exception as e:
-            logger.error(f"Error in company processing thread: {str(e)}", exc_info=True)
-        finally:
-            db.close()
+            
+            except Exception as e:
+                logger.error(f"Error processing company {company.get('symbol', 'unknown')}: {str(e)}", exc_info=True)
+            finally:
+                # Close the database session for this company before moving to the next one
+                db.close()
+                
+                # Give some time between processing companies to avoid rate limiting
+                # or potential resource conflicts
+                import time
+                time.sleep(1)
+        
+        logger.info(f"Completed processing {processed_count} out of {len(companies_to_import)} companies")
                 
     
     # Start processing in background
@@ -240,7 +248,7 @@ async def get_csv_template():
     """Return a CSV template for company import"""
     # Basic template content with the new format
     csv_content = "ticker,doc_type,start_date,end_date\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-Q,2022-01-01,2022-12-31\nGOOGL,8-K,2023-01-01,2023-12-31"
-
+    
     return {
         "content": csv_content,
         "filename": "companies_to_import.csv",
