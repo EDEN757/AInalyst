@@ -168,16 +168,9 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
     
     # Process companies directly instead of using a subprocess
     def process_companies_in_thread():
-        # Create a custom company data structure matching what the process_company_data function expects
-        combined_data = {
-            'companies': [],
-            'filings': []
-        }
-        
         # List to track which companies we're going to process
-        symbols_to_process = []
-        queries_to_process = []
-        
+        processed_count = 0
+
         # Check which companies already exist and create a list of new ones to process
         db = SessionLocal()
         try:
@@ -186,23 +179,18 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                 doc_type = company["doc_type"]
                 start_date = company["start_date"]
                 end_date = company["end_date"]
-                
+
                 # Create a query description for logging
                 query_desc = f"{symbol}:{doc_type} ({start_date} to {end_date})"
-                
+
                 existing_company = crud.get_company_by_symbol(db=db, symbol=symbol)
                 if existing_company:
                     logger.info(f"Company {symbol} already exists, will add filings if they don't exist")
-                    
-                # Add this to our processing list regardless if company exists or not
-                # since we might be adding new filings to an existing company
-                symbols_to_process.append(symbol)
-                queries_to_process.append(query_desc)
-                
-                # Fetch this company's data and add to our combined batch
+
+                # Process this company immediately instead of batching
                 try:
                     logger.info(f"Fetching data for {query_desc}")
-                    
+
                     # Use the new query-based function to fetch filings
                     company_data = fetch_filings_by_query_params(
                         ticker=symbol,
@@ -211,35 +199,25 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                         end_date=end_date,
                         limit=50  # Reasonable limit to avoid overwhelming the system
                     )
-                    
-                    if company_data['companies']:
-                        # Add this company's data to our combined batch
-                        combined_data['companies'].extend(company_data['companies'])
-                        combined_data['filings'].extend(company_data['filings'])
-                        logger.info(f"Added {symbol} data with {len(company_data['filings'])} filings to batch")
+
+                    if company_data['companies'] and company_data['filings']:
+                        logger.info(f"Processing {symbol} with {len(company_data['filings'])} {doc_type} filings")
+
+                        # Process each company independently to avoid mixing data
+                        try:
+                            # Process just this company's data
+                            result = process_company_data(db, company_data)
+                            logger.info(f"Processed {symbol} successfully: {result}")
+                            processed_count += 1
+                        except Exception as e:
+                            logger.error(f"Error processing {symbol}: {str(e)}", exc_info=True)
                     else:
                         logger.warning(f"No data found for {query_desc}")
                 except Exception as e:
                     logger.error(f"Error fetching data for {query_desc}: {str(e)}")
-            
-            if not symbols_to_process:
-                logger.info("No companies to process")
-                return
-                
-            logger.info(f"About to process {len(symbols_to_process)} queries in a single batch: {', '.join(queries_to_process)}")
-            
-            # Now process all the data in a single operation
-            if combined_data['companies'] and combined_data['filings']:
-                logger.info(f"Processing batch with {len(combined_data['companies'])} companies and {len(combined_data['filings'])} filings")
-                try:
-                    # Use the existing process_company_data function to handle all companies at once
-                    result = process_company_data(db, combined_data)
-                    logger.info(f"Batch processing completed successfully: {result}")
-                except Exception as e:
-                    logger.error(f"Error in batch processing: {str(e)}", exc_info=True)
-            else:
-                logger.warning("No data to process after fetching")
-                
+
+            logger.info(f"Completed processing {processed_count} out of {len(companies_to_import)} companies/queries")
+
         except Exception as e:
             logger.error(f"Error in company processing thread: {str(e)}", exc_info=True)
         finally:
