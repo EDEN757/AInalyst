@@ -81,16 +81,16 @@ def get_company_submissions(cik: str) -> Dict[str, Any]:
 
 def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Fetch filings from SEC API using the query parameters.
-
+    
     Args:
         query_params: Dictionary with query parameters
             Example: {
                 "query": "formType:\"10-K\" AND ticker:AAPL AND filedAt:[2020-01-01 TO 2025-12-31]",
-                "from": "0",
+                "from": "0", 
                 "size": "50",
                 "sort": [{ "filedAt": { "order": "desc" } }]
             }
-
+    
     Returns:
         List of dictionaries with filing information
     """
@@ -103,6 +103,8 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
         ticker = None
         doc_type = None
         limit = 5
+        start_date = None
+        end_date = None
 
         # Parse the query string
         query = query_params.get("query", "")
@@ -115,10 +117,18 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
             form_match = re.search(r'formType:"([^"]+)"', query)
             if form_match:
                 doc_type = form_match.group(1)
+                
+        # Extract date range from query
+        if "filedAt:" in query:
+            date_match = re.search(r'filedAt:\[([0-9-]+) TO ([0-9-]+)\]', query)
+            if date_match:
+                start_date = date_match.group(1)
+                end_date = date_match.group(2)
+                logger.info(f"Extracted date range: {start_date} to {end_date}")
 
         # Only proceed if we could extract a ticker
         if ticker and doc_type == "10-K":
-            logger.info(f"Using legacy method to fetch 10-K filings for {ticker}")
+            logger.info(f"Using legacy method to fetch 10-K filings for {ticker} with date range {start_date} to {end_date}")
             # Look up the company's CIK
             cik = lookup_company_cik(ticker)
             if cik:
@@ -128,16 +138,31 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
                     'name': f"{ticker}",
                     'cik': cik
                 }
-
+                
                 # Try to get a better company name
                 try:
                     submissions = get_company_submissions(cik)
                     if submissions and 'name' in submissions:
                         company['name'] = submissions['name']
-
+                    
                     # Extract 10-K filings using legacy method
                     filings = extract_10k_filings(submissions, limit=limit)
-
+                    
+                    # Filter by date range if provided
+                    if start_date and end_date:
+                        start_dt = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
+                        end_dt = datetime.datetime.strptime(end_date, '%Y-%m-%d').date()
+                        
+                        filtered_filings = []
+                        for filing in filings:
+                            filing_date = filing['filing_date'].date()
+                            if start_dt <= filing_date <= end_dt:
+                                filtered_filings.append(filing)
+                        
+                        logger.info(f"Filtered filings by date range {start_date} to {end_date}: "
+                                  f"{len(filings)} -> {len(filtered_filings)}")
+                        filings = filtered_filings
+                    
                     # Format the filings to match the API response format
                     formatted_filings = []
                     for filing in filings:
@@ -151,7 +176,7 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
                             'periodOfReport': filing['filing_date'].strftime('%Y-%m-%d'),
                             'cik': cik
                         })
-
+                    
                     logger.info(f"Found {len(formatted_filings)} filings using legacy method")
                     return formatted_filings
                 except Exception as e:
@@ -165,18 +190,18 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
         'Authorization': settings.SEC_API_KEY,
         'Content-Type': 'application/json'
     }
-
+    
     try:
         logger.info(f"Fetching filings with query: {query_params['query']}")
         response = requests.post(url, headers=headers, json=query_params)
         response.raise_for_status()
-
+        
         result = response.json()
         filings = result.get("filings", [])
-
+        
         logger.info(f"Found {len(filings)} filings matching query")
         return filings
-
+    
     except Exception as e:
         logger.error(f"Error fetching filings by query: {str(e)}")
         return []
