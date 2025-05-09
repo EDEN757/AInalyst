@@ -5,18 +5,21 @@ import asyncio
 import time
 import json
 import os
+import sys
 from tqdm import tqdm
 from sqlalchemy.exc import IntegrityError
 
-from ..services.llm_clients import create_embedding_sync, create_embeddings_batch
-from ..db.crud import (
+# Add app directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.services.llm_clients import create_embedding_sync, create_embeddings_batch as llm_create_embeddings_batch
+from app.db.crud import (
     check_text_hash_exists,
     create_filing_metadata,
     create_document_vector,
     upsert_document_with_embedding
 )
-from ..models.database_models import DocumentChunk
-from ..core.config import settings
+from app.models.database_models import DocumentChunk
+from app.core.config import settings
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -29,20 +32,20 @@ logger.setLevel(settings.LOG_LEVEL)
 async def create_embedding_for_chunk(chunk: Dict[str, Any]) -> Dict[str, Any]:
     """
     Create an embedding for a document chunk.
-    
+
     Parameters:
     - chunk: The document chunk to embed
-    
+
     Returns:
     - The document chunk with embedding
     """
     try:
         # Create embedding
-        embedding = await create_embedding(chunk["chunk_text"], settings.DEFAULT_EMBEDDING_MODEL)
-        
+        embedding = await create_embedding_sync(chunk["chunk_text"], settings.DEFAULT_EMBEDDING_MODEL)
+
         # Add embedding to chunk
         chunk["embedding"] = embedding
-        
+
         return chunk
     except Exception as e:
         logger.error(f"Error creating embedding for chunk {chunk.get('id')}: {str(e)}")
@@ -53,17 +56,50 @@ async def create_embedding_for_chunk(chunk: Dict[str, Any]) -> Dict[str, Any]:
 async def create_embeddings_batch_async(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Create embeddings for a batch of document chunks asynchronously.
-    
+
     Parameters:
     - chunks: List of document chunks to embed
-    
+
     Returns:
     - List of document chunks with embeddings
     """
     # Create embeddings for all chunks in parallel
     tasks = [create_embedding_for_chunk(chunk) for chunk in chunks]
     chunks_with_embeddings = await asyncio.gather(*tasks)
-    
+
+    return chunks_with_embeddings
+
+async def create_embeddings_batch(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Create embeddings for a batch of document chunks.
+    This is the function called from update_job.py.
+
+    Parameters:
+    - chunks: List of document chunks to embed
+
+    Returns:
+    - List of document chunks with embeddings
+    """
+    # Extract texts for batched embedding
+    texts = [chunk["chunk_text"] for chunk in chunks]
+
+    # Create embeddings in batch
+    embeddings = await llm_create_embeddings_batch(
+        texts=texts,
+        model=settings.DEFAULT_EMBEDDING_MODEL
+    )
+
+    # Add embeddings to chunks
+    chunks_with_embeddings = []
+    for i, chunk in enumerate(chunks):
+        try:
+            chunk_copy = chunk.copy()
+            chunk_copy["embedding"] = embeddings[i]
+            chunk_copy["embedding_model"] = settings.DEFAULT_EMBEDDING_MODEL
+            chunks_with_embeddings.append(chunk_copy)
+        except Exception as e:
+            logger.error(f"Error adding embedding to chunk {i}: {str(e)}")
+
     return chunks_with_embeddings
 
 def embed_document_chunks(chunks: List[Dict[str, Any]], batch_size: int = 32) -> List[Dict[str, Any]]:
@@ -88,7 +124,7 @@ def embed_document_chunks(chunks: List[Dict[str, Any]], batch_size: int = 32) ->
     logger.info(f"Creating embeddings for {len(texts)} chunks using {settings.DEFAULT_EMBEDDING_MODEL}")
     
     # Use batched embedding creation
-    embeddings = create_embeddings_batch(
+    embeddings = llm_create_embeddings_batch(
         texts=texts,
         model=settings.DEFAULT_EMBEDDING_MODEL,
         batch_size=batch_size

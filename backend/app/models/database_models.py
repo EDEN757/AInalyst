@@ -57,14 +57,14 @@ class DocumentChunk(Base):
 class ChatHistory(Base):
     """SQLAlchemy model for chat_history table."""
     __tablename__ = "chat_history"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String(255), nullable=False, index=True)
     user_message = Column(Text, nullable=False)
     assistant_message = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    metadata = Column(JSONB)
-    
+    message_metadata = Column(JSONB)
+
     __table_args__ = (
         Index('idx_chat_history_session_id_created_at', 'session_id', 'created_at'),
     )

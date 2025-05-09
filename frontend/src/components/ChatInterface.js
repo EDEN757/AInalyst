@@ -12,6 +12,7 @@ const ChatInterface = () => {
     selectedYear,
     selectedSection,
     selectedModel,
+    setSelectedModel,
     sessionId,
     setSessionId,
   } = useAppContext();

@@ -2,6 +2,7 @@ import requests
 import logging
 import time
 import os
+import sys
 import pandas as pd
 from typing import List, Dict, Any, Optional, Tuple
 from bs4 import BeautifulSoup
@@ -11,7 +12,9 @@ import json
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
-from ..core.config import settings
+# Add app directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.core.config import settings
 
 # Configure logging
 logger = logging.getLogger(__name__)

@@ -1,13 +1,17 @@
 import pandas as pd
 import logging
 import asyncio
+import sys
+import os
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
 
-from ..core.config import settings
-from .fetch_sec import get_sec_filings, get_filing_document_url, download_filing_document
-from .process_docs import process_filing
-from .create_embeddings import create_embeddings_batch, store_embeddings
+# Add app directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.core.config import settings
+from data_updater.fetch_sec import get_sec_filings, get_filing_document_url, download_filing_document
+from data_updater.process_docs import process_filing
+from data_updater.create_embeddings import create_embeddings_batch, store_embeddings
 
 # Configure logging
 logger = logging.getLogger(__name__)

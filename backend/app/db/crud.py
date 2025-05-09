@@ -354,14 +354,14 @@ def save_chat_history(
 ) -> ChatHistory:
     """
     Save a chat message pair to the history.
-    
+
     Parameters:
     - db: Database session
     - session_id: Chat session ID
     - user_message: Message from the user
     - assistant_message: Response from the assistant
     - metadata: Additional metadata (e.g., sources used)
-    
+
     Returns:
     - Created ChatHistory object
     """
@@ -369,7 +369,7 @@ def save_chat_history(
         session_id=session_id,
         user_message=user_message,
         assistant_message=assistant_message,
-        metadata=metadata
+        message_metadata=metadata
     )
     db.add(chat_entry)
     db.commit()

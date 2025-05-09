@@ -189,7 +189,7 @@ async def get_history(session_id: str, limit: int = 10, db: Session = Depends(ge
                 "user_message": entry.user_message,
                 "assistant_message": entry.assistant_message,
                 "created_at": entry.created_at,
-                "sources": entry.metadata.get("sources", []) if entry.metadata else []
+                "sources": entry.message_metadata.get("sources", []) if entry.message_metadata else []
             })
         
         return {"history": history_list}

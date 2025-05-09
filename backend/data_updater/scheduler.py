@@ -11,9 +11,14 @@ import time
 from typing import List, Dict, Any, Optional, Set, Tuple
 from sqlalchemy.orm import Session
 
-from ..core.config import settings
-from .diff_checker import get_update_candidates, UpdateCandidate
-from .update_job import update_company_data
+import sys
+import os
+
+# Add app directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.core.config import settings
+from data_updater.diff_checker import get_update_candidates, UpdateCandidate
+from data_updater.update_job import update_company_data
 
 # Configure logging
 logger = logging.getLogger(__name__)

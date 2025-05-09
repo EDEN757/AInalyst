@@ -11,7 +11,12 @@ from typing import List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from ..core.config import settings
+import sys
+import os
+
+# Add app directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.core.config import settings
 
 # Configure logging
 logger = logging.getLogger(__name__)

@@ -11,7 +11,12 @@ import threading
 from .core.config import settings
 from .api import chat, companies, companies_csv, retrieval
 from .db.database import SessionLocal
-from .data_updater.scheduler import on_launch_update
+import sys
+import os
+
+# Add data_updater to path
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from data_updater.scheduler import on_launch_update
 
 # Configure logging
 logging.basicConfig(
