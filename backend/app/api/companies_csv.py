@@ -59,7 +59,7 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
         default_csv_path = "/app/companies_to_import.csv"
         try:
             with open(default_csv_path, 'w') as f:
-                f.write("ticker,doc_type,date_range\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-K,2020-01-01,2025-12-31\nGOOGL,10-K,2020-01-01,2025-12-31")
+                f.write("ticker,doc_type,start_date,end_date\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-K,2020-01-01,2025-12-31\nGOOGL,10-K,2020-01-01,2025-12-31")
             logger.info(f"Created default CSV file at {default_csv_path}")
             csv_path = default_csv_path
         except Exception as e:
@@ -69,12 +69,12 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                 os.path.join(current_dir, "companies_to_import.csv"),
                 "./companies_to_import.csv"
             ]
-            
+
             created = False
             for path in alt_paths:
                 try:
                     with open(path, 'w') as f:
-                        f.write("ticker,doc_type,date_range\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-K,2020-01-01,2025-12-31\nGOOGL,10-K,2020-01-01,2025-12-31")
+                        f.write("ticker,doc_type,start_date,end_date\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-K,2020-01-01,2025-12-31\nGOOGL,10-K,2020-01-01,2025-12-31")
                     logger.info(f"Created default CSV file at alternate location: {path}")
                     csv_path = path
                     created = True
@@ -97,13 +97,15 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
             
             # Skip header row
             header = next(csv_reader)
-            expected_header = ["ticker", "doc_type", "date_range"]
-            
-            # Validate header
-            if not all(column in header for column in expected_header):
+            expected_header_old = ["ticker", "doc_type", "date_range"]
+            expected_header_new = ["ticker", "doc_type", "start_date", "end_date"]
+
+            # Validate header for either format
+            if not (all(column in header for column in expected_header_old) or
+                    all(column in header for column in expected_header_new)):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"CSV must have the following columns: {', '.join(expected_header)}"
+                    detail=f"CSV must have either columns {', '.join(expected_header_old)} or {', '.join(expected_header_new)}"
                 )
 
             # Regular expression to validate date format YYYY-MM-DD
@@ -111,19 +113,28 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
             
             # Parse rows
             for row in csv_reader:
-                if len(row) < 3 or not row[0] or not row[1] or not row[2]:
-                    continue  # Skip empty rows
+                if len(row) < 4 or not row[0] or not row[1] or not row[2] or not row[3]:
+                    logger.warning(f"Skipping row - insufficient data: {row}")
+                    continue  # Skip empty or insufficient rows
 
                 ticker = row[0].strip().upper()
                 doc_type = row[1].strip()
-                date_range = row[2].strip().split(',')
 
-                if len(date_range) != 2:
-                    logger.warning(f"Skipping {ticker} - invalid date range format: {row[2]}")
-                    continue
-
-                start_date = date_range[0].strip()
-                end_date = date_range[1].strip()
+                # Handle both formats:
+                # 1. If date_range is a separate column with comma: "2020-01-01,2025-12-31"
+                # 2. If start_date and end_date are separate columns: "2020-01-01" "2025-12-31"
+                if len(row) >= 4:
+                    # Assume separate columns format
+                    start_date = row[2].strip()
+                    end_date = row[3].strip()
+                else:
+                    # Try to split the third column by comma
+                    date_range = row[2].strip().split(',')
+                    if len(date_range) != 2:
+                        logger.warning(f"Skipping {ticker} - invalid date range format: {row[2]}")
+                        continue
+                    start_date = date_range[0].strip()
+                    end_date = date_range[1].strip()
 
                 # Validate date format
                 if not re.match(date_pattern, start_date) or not re.match(date_pattern, end_date):
@@ -250,10 +261,10 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
 async def get_csv_template():
     """Return a CSV template for company import"""
     # Basic template content with the new format
-    csv_content = "ticker,doc_type,date_range\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-Q,2022-01-01,2022-12-31\nGOOGL,8-K,2023-01-01,2023-12-31"
-    
+    csv_content = "ticker,doc_type,start_date,end_date\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-Q,2022-01-01,2022-12-31\nGOOGL,8-K,2023-01-01,2023-12-31"
+
     return {
         "content": csv_content,
         "filename": "companies_to_import.csv",
-        "instructions": "Place this file in the project root directory. CSV should have three columns:\n1. ticker: Company ticker symbol (e.g., AAPL)\n2. doc_type: SEC filing type (e.g., 10-K, 10-Q, 8-K)\n3. date_range: Start and end dates in ISO format (YYYY-MM-DD) separated by comma"
+        "instructions": "Place this file in the project root directory. CSV should have four columns:\n1. ticker: Company ticker symbol (e.g., AAPL)\n2. doc_type: SEC filing type (e.g., 10-K, 10-Q, 8-K)\n3. start_date: Start date in ISO format (YYYY-MM-DD)\n4. end_date: End date in ISO format (YYYY-MM-DD)"
     }
