@@ -319,10 +319,69 @@ body {
   margin-top: 25px;
   padding-top: 20px;
   border-top: 1px solid #ddd;
+  background-color: #f5f8fa;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
 .csv-info {
   margin-bottom: 15px;
+}
+
+.csv-instructions {
+  margin-bottom: 20px;
+}
+
+.csv-instructions h5 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #444;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 5px;
+}
+
+.csv-instructions ol {
+  padding-left: 25px;
+}
+
+.csv-instructions li {
+  margin-bottom: 8px;
+}
+
+.csv-format-info {
+  background-color: #e9f7fe;
+  padding: 10px 15px;
+  border-radius: 5px;
+  margin-top: 15px;
+  border-left: 4px solid #0095ff;
+}
+
+.csv-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 15px;
+  background-color: #f9f9f9;
+  border-radius: 5px;
+  margin: 15px 0;
+}
+
+.csv-error-help {
+  margin-top: 15px;
+  padding: 10px 15px;
+  background-color: #fff6f6;
+  border-radius: 5px;
+  border-left: 4px solid #ff9595;
+}
+
+.csv-error-help h5 {
+  margin-top: 0;
+  color: #c53030;
+}
+
+.csv-error-help ul {
+  padding-left: 25px;
 }
 
 .form-group {

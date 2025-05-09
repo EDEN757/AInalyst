@@ -102,24 +102,61 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
     setLoading(true);
     setError(null);
     setCsvImporting(true);
-    
+
     try {
       // Call the API to process the CSV file in the project
       const response = await axios.post(`${apiUrl}/api/v1/companies/import-from-csv`);
-      
+
       console.log('CSV import response:', response.data);
-      
+
       if (response.data.status === 'processing') {
-        alert(`Importing ${response.data.companies.length} queries from CSV. Processing in background. Please check back in a few minutes.`);
+        // Show a more detailed success message
+        const importMessage = `Successfully started import of ${response.data.companies.length} companies:
+
+${response.data.companies.slice(0, 5).join('\n')}${response.data.companies.length > 5 ? '\n...(and more)' : ''}
+
+Processing in background. Please check back in a few minutes.`;
+
+        alert(importMessage);
       }
-      
+
       // Refresh companies list after a short delay
       setTimeout(fetchCompanies, 3000);
-      
+
     } catch (error) {
       console.error('Error importing from CSV:', error);
+
+      // Set error state for display in UI
       setError(`Error importing from CSV: ${error.response?.data?.detail || error.message}`);
-      alert(`Error importing from CSV: ${error.response?.data?.detail || "Check if companies_to_import.csv exists in project root"}`);
+
+      // Create a more helpful error message
+      let errorMessage = 'Error importing from CSV: ';
+
+      if (error.response) {
+        if (error.response.status === 404) {
+          // CSV file not found error
+          errorMessage += error.response.data.detail ||
+                        "The companies_to_import.csv file wasn't found.\n\n" +
+                        "Please download the template, edit it with your companies, and place it in the project root directory.";
+        } else if (error.response.status === 500) {
+          // Server error
+          errorMessage += "There was a server error processing the CSV file.\n\n" +
+                        "Server message: " + (error.response.data.detail || error.response.statusText);
+        } else {
+          // Other API error
+          errorMessage += error.response.data.detail || error.response.statusText;
+        }
+      } else if (error.request) {
+        // Network error
+        errorMessage += "Could not connect to the server. Please check that the backend is running.\n\n" +
+                      "If you're using Docker, make sure all containers are up and running with 'docker-compose ps'.";
+      } else {
+        // Other error
+        errorMessage += error.message;
+      }
+
+      // Show error dialog
+      alert(errorMessage);
     } finally {
       setCsvImporting(false);
       setLoading(false);
@@ -249,26 +286,52 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
           <div className="csv-import-section">
             <h4>Import Companies from CSV</h4>
             <div className="csv-info">
-              <p>Import companies defined in the project's CSV file</p>
+              <div className="csv-instructions">
+                <h5>How to Import Companies:</h5>
+                <ol>
+                  <li>Download the CSV template using the button below</li>
+                  <li>Edit the CSV to add the companies and filings you need</li>
+                  <li>Place the edited file in the project root directory as <code>companies_to_import.csv</code></li>
+                  <li>Click the "Import from CSV" button to load the companies</li>
+                </ol>
+
+                <div className="csv-format-info">
+                  <h5>CSV Format:</h5>
+                  <p><strong>Headers:</strong> ticker,doc_type,start_date,end_date</p>
+                  <p><strong>Example:</strong> AAPL,10-K,2020-01-01,2025-12-31</p>
+                  <p><strong>Supported Doc Types:</strong> 10-K, 10-Q, 8-K</p>
+                </div>
+              </div>
+
               <div className="csv-actions">
-                <button 
-                  onClick={handleDownloadTemplate} 
+                <button
+                  onClick={handleDownloadTemplate}
                   className="button secondary"
                   disabled={loading}
                 >
-                  Download Template
+                  1. Download Template
                 </button>
-                <button 
-                  onClick={handleImportFromCsv} 
+                <button
+                  onClick={handleImportFromCsv}
                   className="button primary"
                   disabled={loading}
                 >
-                  {csvImporting ? 'Importing...' : 'Import from CSV'}
+                  {csvImporting ? 'Importing...' : '2. Import from CSV'}
                 </button>
               </div>
-              <p><strong>Note:</strong> Edit companies_to_import.csv in the project root to add companies</p>
-              <p><strong>CSV Format:</strong> ticker,doc_type,date_range</p>
-              <p><strong>Example:</strong> AAPL,10-K,2020-01-01,2025-12-31</p>
+
+              {error && (
+                <div className="csv-error-help">
+                  <h5>Troubleshooting:</h5>
+                  <p>If you're having issues with the CSV import:</p>
+                  <ul>
+                    <li>Make sure the CSV file is named exactly <code>companies_to_import.csv</code></li>
+                    <li>Check that the file is in the correct location (project root)</li>
+                    <li>Verify the CSV has the correct format with headers</li>
+                    <li>If using Docker, ensure volumes are mounted correctly</li>
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -120,11 +120,47 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
             logger.error(f"Error in last resort search: {str(e)}")
 
         if not csv_path:
-            # If the CSV file does not exist, just return an error
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No companies_to_import.csv file found. Please create one in the project root directory or in /data directory and try again."
-            )
+            # If the CSV file doesn't exist, create one in /data if possible
+            try:
+                if os.path.exists("/data") and os.access("/data", os.W_OK):
+                    emergency_path = "/data/companies_to_import.csv"
+                    template_content = "ticker,doc_type,start_date,end_date\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-Q,2022-01-01,2022-12-31\nGOOGL,8-K,2023-01-01,2023-12-31\nTSLA,10-K,2020-01-01,2022-12-31"
+
+                    logger.info(f"Creating emergency CSV at {emergency_path}")
+                    with open(emergency_path, 'w') as em_file:
+                        em_file.write(template_content)
+                    csv_path = emergency_path
+                    logger.info(f"✅ Created emergency CSV at {emergency_path}")
+
+                    # Fix permissions if needed
+                    try:
+                        os.chmod(emergency_path, 0o666)  # Make readable/writable by everyone
+                    except Exception as perm_err:
+                        logger.warning(f"Couldn't adjust permissions: {str(perm_err)}")
+                else:
+                    # If the CSV file does not exist and we can't create one, return a helpful error
+                    error_paths = [
+                        os.path.join(project_root, "companies_to_import.csv"),
+                        "/data/companies_to_import.csv",
+                        "/app/companies_to_import.csv"
+                    ]
+
+                    error_message = "No companies_to_import.csv file found. Please create the file at one of these locations:\n"
+                    for path in error_paths:
+                        error_message += f"- {path}\n"
+                    error_message += "\nDownload the template from the web interface, edit it, and place it in one of these locations."
+
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=error_message
+                    )
+            except Exception as e:
+                logger.error(f"Error creating emergency CSV: {str(e)}")
+                # Return a detailed error message
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Could not find or create CSV file. Error: {str(e)}"
+                )
     
     # Process CSV data
     companies_to_import = []
