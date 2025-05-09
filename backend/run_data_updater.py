@@ -29,16 +29,16 @@ except ImportError as e:
     sys.exit(1)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run the 10-K filings update job")
-    parser.add_argument('--mode', choices=['DEMO', 'FULL'], default=settings.APP_MODE,
-                        help='Mode to run the job in: DEMO for a subset, FULL for all S&P 500')
+    parser = argparse.ArgumentParser(description="Run the SEC filings update job")
+    parser.add_argument('--mode', choices=['CSV_ONLY'], default='CSV_ONLY',
+                        help='Mode to run the job in: only CSV_ONLY is supported now')
     parser.add_argument('--skip-fetch', action='store_true', help='Skip fetching new data')
     parser.add_argument('--skip-process', action='store_true', help='Skip processing filings')
     parser.add_argument('--skip-embeddings', action='store_true', help='Skip creating embeddings')
-    
+
     args = parser.parse_args()
-    
-    logger.info(f"Starting update job in {args.mode} mode")
+
+    logger.info("Starting update job with CSV import only")
     
     try:
         result = run_update_job(

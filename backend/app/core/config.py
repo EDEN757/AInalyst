@@ -6,9 +6,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Database settings
     DATABASE_URL: str
-    
-    # Application mode
-    APP_MODE: Literal["DEMO", "FULL"] = "DEMO"
+
+    # Application mode (kept for backward compatibility)
+    APP_MODE: Literal["CSV_ONLY"] = "CSV_ONLY"
     
     # Embedding configuration (used for BOTH documents and queries)
     EMBEDDING_PROVIDER: Literal["OPENAI", "GEMINI"] = "OPENAI"

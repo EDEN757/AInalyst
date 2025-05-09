@@ -18,34 +18,19 @@ SEC_HEADERS = {
 SEC_BASE_URL = "https://data.sec.gov/submissions"
 SEC_API_URL = "https://api.sec-api.io"
 
-# Demo mode companies - top 10 by market cap (example)
-# This is only used for the demo mode and should not be used for lookups
-DEMO_COMPANIES = [
-    {"symbol": "AAPL", "name": "Apple Inc.", "cik": "0000320193"},
-    {"symbol": "MSFT", "name": "Microsoft Corporation", "cik": "0000789019"},
-    {"symbol": "GOOGL", "name": "Alphabet Inc.", "cik": "0001652044"},
-    {"symbol": "AMZN", "name": "Amazon.com, Inc.", "cik": "0001018724"},
-    {"symbol": "NVDA", "name": "NVIDIA Corporation", "cik": "0001045810"},
-    {"symbol": "META", "name": "Meta Platforms, Inc.", "cik": "0001326801"},
-    {"symbol": "BRK-B", "name": "Berkshire Hathaway Inc.", "cik": "0001067983"},
-    {"symbol": "JPM", "name": "JPMorgan Chase & Co.", "cik": "0000019617"},
-    {"symbol": "JNJ", "name": "Johnson & Johnson", "cik": "0000200406"},
-    {"symbol": "V", "name": "Visa Inc.", "cik": "0001403161"}
-]
-
+# We no longer use demo companies - all data comes from CSV imports
 
 def get_sp500_companies() -> List[Dict[str, str]]:
     """Get current S&P 500 companies list.
-    
-    In a real application, you would fetch this from an API or a reliable source.
-    For simplicity, this example returns a partial/static list.
-    
+
+    This method is kept for compatibility but now returns an empty list.
+    All data should come from CSV imports instead.
+
     Returns:
-        List of dictionaries with company info (symbol, name, cik)
+        Empty list (CSV import should be used instead)
     """
-    # In a full implementation, you would fetch the real S&P 500 components
-    # For demo purposes, we'll return just 10 major companies
-    return DEMO_COMPANIES
+    logger.info("get_sp500_companies() is deprecated. Use CSV import instead.")
+    return []
 
 
 def get_company_submissions(cik: str) -> Dict[str, Any]:
@@ -97,8 +82,8 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
     """
     # Check if SEC API key is available
     if not settings.SEC_API_KEY:
-        logger.error("SEC_API_KEY is not configured. Please add it to your .env file.")
-        logger.info("Falling back to legacy SEC data fetching method")
+        logger.warning("SEC_API_KEY is not configured. Using legacy SEC data fetching method.")
+        logger.info("This method works for most companies but has limited document type support.")
 
         # Extract information from the query to use with legacy method
         ticker = None
@@ -149,11 +134,15 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
 
                     # Extract filings of the requested document type
                     filings = []
-                    if doc_type == "10-K":
+                    logger.info(f"Extracting {doc_type} filings for {ticker} (CIK: {cik})")
+
+                    # Get filings for this document type
+                    filings = extract_filings_by_type(submissions, doc_type, limit=limit)
+
+                    # If no filings found for the specific doc_type and this is not 10-K, try 10-K as fallback
+                    if not filings and doc_type != "10-K":
+                        logger.warning(f"No {doc_type} filings found for {ticker}. Trying 10-K as fallback.")
                         filings = extract_10k_filings(submissions, limit=limit)
-                    else:
-                        # For other document types, try to extract them from recent filings
-                        filings = extract_filings_by_type(submissions, doc_type, limit=limit)
 
                     # Filter by date range if provided
                     if start_date and end_date and filings:
@@ -319,33 +308,27 @@ def lookup_company_cik_from_sec(symbol: str) -> Optional[str]:
 
 def lookup_company_cik(symbol: str) -> Optional[str]:
     """Look up a company's CIK number by its ticker symbol.
-    
+
     Args:
         symbol: Company stock symbol (e.g., "AAPL")
-        
+
     Returns:
         CIK number as a string, or None if not found
     """
-    # First check our demo list for a quick match - FOR DEMO MODE ONLY 
-    # This will be used when explicitly using the demo mode functions
-    demo_company = next((c for c in DEMO_COMPANIES if c['symbol'] == symbol), None)
-    if demo_company:
-        return demo_company['cik']
-    
-    # For normal operation (including CSV imports), always look up from SEC
+    # Always look up from SEC directly
     return lookup_company_cik_from_sec(symbol)
 
 
 def fetch_filings_by_query_params(ticker: str, doc_type: str, start_date: str, end_date: str, limit: int = 50) -> Dict[str, List]:
     """Fetch company and filing information based on SEC API query.
-    
+
     Args:
         ticker: Company ticker symbol (e.g., "AAPL")
         doc_type: Document type (e.g., "10-K", "10-Q", "8-K")
         start_date: Start date in ISO format (e.g., "2020-01-01")
         end_date: End date in ISO format (e.g., "2025-12-31")
         limit: Maximum number of filings to fetch (default: 50)
-    
+
     Returns:
         Dictionary with companies and filings lists
     """
@@ -353,33 +336,38 @@ def fetch_filings_by_query_params(ticker: str, doc_type: str, start_date: str, e
         'companies': [],
         'filings': []
     }
-    
-    logger.info(f"Processing company with symbol: {ticker} for {doc_type} documents from {start_date} to {end_date}")
-    
+
+    logger.info(f"======== STARTING SEARCH: {ticker} {doc_type} from {start_date} to {end_date} ========")
+
     try:
         # Look up the company's CIK - use direct SEC lookup to avoid caching effects
+        logger.info(f"Looking up CIK for {ticker}...")
         cik = lookup_company_cik_from_sec(ticker)
-        
+
         if cik:
             company = {
                 'symbol': ticker,
                 'name': f"{ticker}",  # We'll get a better name when we fetch submissions
                 'cik': cik
             }
-            
-            logger.info(f"Using CIK {cik} for company {ticker}")
-            
+
+            logger.info(f"Found CIK {cik} for company {ticker}")
+
             # Try to get a better company name from the submissions data
             try:
+                logger.info(f"Fetching submission data for {ticker} (CIK: {cik})...")
                 submissions = get_company_submissions(cik)
                 if submissions and 'name' in submissions:
                     company['name'] = submissions['name']
+                    logger.info(f"Got company name: {company['name']}")
+                else:
+                    logger.warning(f"Couldn't find name in submissions for {ticker}")
             except Exception as e:
-                logger.error(f"Error getting better name for {ticker}: {str(e)}")
+                logger.error(f"Error getting details for {ticker}: {str(e)}")
         else:
             logger.error(f"Could not find CIK for {ticker}. Cannot fetch filings.")
             return results
-            
+
         # Add company to results
         results['companies'].append({
             'symbol': company['symbol'],
@@ -388,7 +376,8 @@ def fetch_filings_by_query_params(ticker: str, doc_type: str, start_date: str, e
             'sector': company.get('sector'),
             'industry': company.get('industry')
         })
-        
+        logger.info(f"Added company {ticker} to results list")
+
         # Build the query
         query_params = {
             "query": f'formType:"{doc_type}" AND ticker:{ticker} AND filedAt:[{start_date} TO {end_date}]',
@@ -396,20 +385,31 @@ def fetch_filings_by_query_params(ticker: str, doc_type: str, start_date: str, e
             "size": str(min(limit, 50)),  # API has a limit of 50 results per request
             "sort": [{ "filedAt": { "order": "desc" } }]
         }
-        
+        logger.info(f"Built query: {query_params['query']}")
+
         # Fetch filings using the SEC API query
+        logger.info(f"Fetching filings for {ticker}...")
         filings_data = fetch_filings_by_query(query_params)
-        
+
+        if filings_data:
+            logger.info(f"Retrieved {len(filings_data)} filing records")
+        else:
+            logger.warning(f"No filing data returned from query for {ticker}")
+
         # Process filings
         for filing in filings_data:
             filing_info = extract_filing_info(filing, company)
             results['filings'].append(filing_info)
-        
-        logger.info(f"Found {len(results['filings'])} {doc_type} filings for {ticker}")
-        
+            logger.info(f"Added filing: {filing_info['filing_type']} from {filing_info['filing_date']} (Accession: {filing_info['accession_number']})")
+
+        logger.info(f"Processed {len(results['filings'])} {doc_type} filings for {ticker}")
+
     except Exception as e:
         logger.error(f"Error processing company {ticker}: {str(e)}")
-    
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+
+    logger.info(f"======== COMPLETED SEARCH: {ticker} with {len(results['companies'])} companies and {len(results['filings'])} filings ========")
     return results
 
 
@@ -507,83 +507,41 @@ def extract_filings_by_type(submissions_data: Dict[str, Any], form_type: str, li
 
 
 def fetch_companies_and_filings(mode: str = 'DEMO', filing_limit: int = 2) -> Dict[str, List]:
-    """Legacy function to fetch companies and their 10-K filings based on the mode.
-    
-    This function is kept for backward compatibility.
-    
-    Args:
-        mode: 'DEMO' for a subset of companies, 'FULL' for all S&P 500
-        filing_limit: Maximum number of 10-K filings to fetch per company
-    
+    """Legacy function that is deprecated.
+
+    This function is kept for backward compatibility but should not be used.
+    Use fetch_filings_by_query_params from CSV import instead.
+
     Returns:
-        Dictionary with companies and filings lists
+        Empty dictionary with companies and filings lists
     """
-    results = {
+    logger.warning("fetch_companies_and_filings() is deprecated. Use CSV import instead.")
+
+    return {
         'companies': [],
         'filings': []
     }
-    
-    # Get companies based on mode
-    companies = get_sp500_companies()
-    
-    if mode == 'DEMO':
-        # In demo mode, use just a few companies
-        companies = companies[:3]  # Limit to 3 companies for demo
-    
-    for company in companies:
-        logger.info(f"Processing company: {company['symbol']} - {company['name']}")
-        
-        # Add company to results
-        results['companies'].append({
-            'symbol': company['symbol'],
-            'name': company['name'],
-            'cik': company['cik'],
-            'sector': company.get('sector'),
-            'industry': company.get('industry')
-        })
-        
-        try:
-            # Get company submissions from SEC
-            submissions = get_company_submissions(company['cik'])
-            
-            # Extract 10-K filings
-            filings = extract_10k_filings(submissions, limit=filing_limit)
-            
-            # Add filings to results with company info
-            for filing in filings:
-                filing['company_symbol'] = company['symbol']
-                filing['company_name'] = company['name']
-                filing['company_cik'] = company['cik']
-                results['filings'].append(filing)
-            
-            logger.info(f"Found {len(filings)} 10-K filings for {company['symbol']}")
-            
-        except Exception as e:
-            logger.error(f"Error processing company {company['symbol']}: {str(e)}")
-    
-    logger.info(f"Finished processing {len(results['companies'])} companies")
-    logger.info(f"Total 10-K filings found: {len(results['filings'])}")
-    
-    return results
 
 
 def fetch_companies_and_filings_by_symbol(symbol: str, filing_limit: int = 2, filing_years: List[int] = None) -> Dict[str, List]:
     """Legacy function to fetch company information and filings for a specific ticker symbol.
-    
-    This function is kept for backward compatibility.
-    
+
+    This function is now a wrapper around fetch_filings_by_query_params.
+
     Args:
         symbol: Company stock symbol (e.g., "AAPL")
         filing_limit: Maximum number of 10-K filings to fetch
         filing_years: Optional list of specific years to fetch filings for
-    
+
     Returns:
         Dictionary with company and filings lists
     """
+    logger.warning("fetch_companies_and_filings_by_symbol() is deprecated. Use CSV import instead.")
+
     # Use the new function to fetch filings with some reasonable defaults
     today = datetime.datetime.now()
     end_date = today.strftime("%Y-%m-%d")
-    
+
     # Default to looking back 5 years if no specific years are provided
     if filing_years:
         # Convert filing_years to date range
@@ -594,7 +552,7 @@ def fetch_companies_and_filings_by_symbol(symbol: str, filing_limit: int = 2, fi
     else:
         # Default to 5 years back
         start_date = f"{today.year - 5}-01-01"
-    
+
     return fetch_filings_by_query_params(
         ticker=symbol,
         doc_type="10-K",

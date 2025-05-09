@@ -198,50 +198,49 @@ def process_company_data(db, data):
         }
 
 
-def run_update_job(mode='DEMO', skip_fetch=False, skip_process=False, skip_embeddings=False):
+def run_update_job(mode='CSV_ONLY', skip_fetch=False, skip_process=False, skip_embeddings=False):
     """Run the complete data update job.
-    
+
     Args:
-        mode: 'DEMO' or 'FULL'
+        mode: Only 'CSV_ONLY' is supported now
         skip_fetch: Skip fetching new data
         skip_process: Skip processing filings
         skip_embeddings: Skip creating embeddings
-    
+
     Returns:
         Summary of the update job
     """
     start_time = time.time()
     summary = {}
-    
+
     # Setup database
     setup_database()
-    
+
     # Create a database session
     db = SessionLocal()
-    
+
     try:
-        # 1. Fetch companies and filings
+        # 1. Fetch companies and filings - skipped in CSV_ONLY mode
         if not skip_fetch:
-            logger.info(f"Fetching companies and filings in {mode} mode...")
-            data = fetch_companies_and_filings(mode=mode)
-            summary["fetch"] = store_companies_and_filings(db, data)
-        
+            logger.info("Automatic data fetching is disabled. Use CSV import instead.")
+            summary["fetch"] = {"companies_created": 0, "filings_created": 0}
+
         # 2. Process filings into chunks
         if not skip_process:
             logger.info("Processing filings...")
             summary["process"] = process_filings(db)
-        
+
         # 3. Create embeddings for chunks
         if not skip_embeddings:
             logger.info("Creating embeddings...")
             summary["embeddings"] = create_embeddings(db)
-        
+
         duration = time.time() - start_time
         summary["duration_seconds"] = round(duration, 2)
         summary["status"] = "completed"
-        
+
         return summary
-        
+
     except Exception as e:
         logger.error(f"Error in update job: {str(e)}")
         return {
@@ -249,26 +248,26 @@ def run_update_job(mode='DEMO', skip_fetch=False, skip_process=False, skip_embed
             "error": str(e),
             "duration_seconds": round(time.time() - start_time, 2)
         }
-    
+
     finally:
         db.close()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run the 10-K filings update job")
-    parser.add_argument('--mode', choices=['DEMO', 'FULL'], default=settings.APP_MODE,
-                        help='Mode to run the job in: DEMO for a subset, FULL for all S&P 500')
+    parser = argparse.ArgumentParser(description="Run the SEC filings update job")
+    parser.add_argument('--mode', choices=['CSV_ONLY'], default='CSV_ONLY',
+                        help='Mode to run the job in: only CSV_ONLY is supported now')
     parser.add_argument('--skip-fetch', action='store_true', help='Skip fetching new data')
     parser.add_argument('--skip-process', action='store_true', help='Skip processing filings')
     parser.add_argument('--skip-embeddings', action='store_true', help='Skip creating embeddings')
-    
+
     args = parser.parse_args()
-    
+
     result = run_update_job(
         mode=args.mode,
         skip_fetch=args.skip_fetch,
         skip_process=args.skip_process,
         skip_embeddings=args.skip_embeddings
     )
-    
+
     logger.info(f"Update job completed with result: {result}")

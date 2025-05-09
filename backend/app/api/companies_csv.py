@@ -30,19 +30,25 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
     current_dir = os.getcwd()
     logger.info(f"Current working directory: {current_dir}")
     
-    # Try multiple possible locations for the CSV file
+    # Try specific locations for the CSV file, in priority order
+    # Only look in expected locations to avoid creating/reading CSV files in backend folder
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     possible_paths = [
-        # Standard project root (when running locally)
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "companies_to_import.csv"),
-        # Docker container root
+        # Standard project root (when running locally) - this should be the primary location
+        os.path.join(project_root, "companies_to_import.csv"),
+
+        # Docker container locations
         "/app/companies_to_import.csv",
-        # Docker volume mount (if configured in docker-compose)
-        "/data/companies_to_import.csv",
-        # Current working directory
-        os.path.join(current_dir, "companies_to_import.csv"),
-        # One level up from current directory
-        os.path.join(os.path.dirname(current_dir), "companies_to_import.csv")
+        "/data/companies_to_import.csv"
     ]
+
+    # Explicitly avoid checking current directory if it's inside the backend folder
+    if "backend" not in current_dir:
+        possible_paths.append(os.path.join(current_dir, "companies_to_import.csv"))
+        # Only check one level up if we're not already in the backend
+        parent_dir = os.path.dirname(current_dir)
+        if "backend" not in parent_dir:
+            possible_paths.append(os.path.join(parent_dir, "companies_to_import.csv"))
     
     # Log all paths we're checking
     for path in possible_paths:
@@ -307,11 +313,15 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                             error_count += 1
                             logger.error(f"ERROR processing {symbol}: {str(e)}", exc_info=True)
                     else:
+                        # No data found - provide guidance
                         logger.warning(f"No data found for {query_desc}")
                         if not company_data.get('companies'):
-                            logger.warning(f"No company data returned for {symbol}")
+                            logger.warning(f"No company data returned for {symbol}. Check if the ticker symbol is correct.")
                         if not company_data.get('filings'):
-                            logger.warning(f"No filings data returned for {symbol}")
+                            logger.warning(f"No filings data returned for {symbol}. This could be because:")
+                            logger.warning(f"1. No {doc_type} filings exist for the specified date range")
+                            logger.warning(f"2. SEC API limitations without an API key")
+                            logger.warning(f"3. The date range ({start_date} to {end_date}) might not include filing dates")
                 except Exception as e:
                     error_count += 1
                     logger.error(f"ERROR fetching data for {query_desc}: {str(e)}", exc_info=True)
