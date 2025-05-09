@@ -30,25 +30,41 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
     current_dir = os.getcwd()
     logger.info(f"Current working directory: {current_dir}")
     
+    # Debug the file lookup process in detail
+    logger.info("========== CSV FILE LOOKUP PROCESS ==========")
+
     # Try specific locations for the CSV file, in priority order
-    # Only look in expected locations to avoid creating/reading CSV files in backend folder
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    logger.info(f"Project root directory: {project_root}")
+
+    # Define all possible paths with clear priorities
     possible_paths = [
-        # Standard project root (when running locally) - this should be the primary location
+        # Primary location - Docker volume mount
+        "/data/companies_to_import.csv",  # This is the most reliable location in Docker
+
+        # Project root (when running locally)
         os.path.join(project_root, "companies_to_import.csv"),
 
-        # Docker container locations
+        # Legacy Docker location (keeping for compatibility)
         "/app/companies_to_import.csv",
-        "/data/companies_to_import.csv"
+
+        # Absolute path to the expected CSV location
+        "/Users/edoardoschiatti/Documents/GitHub/AInalyst/companies_to_import.csv"
     ]
 
-    # Explicitly avoid checking current directory if it's inside the backend folder
+    # If current directory is not inside backend, check there too
     if "backend" not in current_dir:
+        logger.info(f"Adding current directory: {current_dir}")
         possible_paths.append(os.path.join(current_dir, "companies_to_import.csv"))
-        # Only check one level up if we're not already in the backend
+
+        # Check one level up as well
         parent_dir = os.path.dirname(current_dir)
-        if "backend" not in parent_dir:
+        if parent_dir and "backend" not in parent_dir:
+            logger.info(f"Adding parent directory: {parent_dir}")
             possible_paths.append(os.path.join(parent_dir, "companies_to_import.csv"))
+
+    logger.info("========== END CSV FILE LOOKUP PROCESS ==========")
+    
     
     # Log all paths we're checking
     for path in possible_paths:
@@ -56,18 +72,59 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
     
     csv_path = None
     for path in possible_paths:
-        if os.path.exists(path):
-            csv_path = path
-            logger.info(f"Found CSV file at: {csv_path}")
-            break
-    
+        try:
+            if os.path.exists(path):
+                # Try to open the file to verify it's readable
+                with open(path, 'r') as test_read:
+                    first_line = test_read.readline()
+                    logger.info(f"Found CSV file at: {path} (First line: {first_line.strip()})")
+                csv_path = path
+                break
+            else:
+                # Check if path is accessible
+                parent_dir = os.path.dirname(path)
+                if os.path.exists(parent_dir):
+                    logger.info(f"Parent directory {parent_dir} exists, but file not found")
+                else:
+                    logger.warning(f"Parent directory {parent_dir} does not exist")
+        except Exception as e:
+            logger.error(f"Error testing path {path}: {str(e)}")
+
     if not csv_path:
-        # If the CSV file does not exist, just return an error
-        # No longer creating a default CSV automatically
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No companies_to_import.csv file found. Please create one in the project root directory and try again."
-        )
+        # Check if anyone can find the file ANYWHERE
+        logger.error("Failed to find companies_to_import.csv - checking ANY location")
+
+        try:
+            # Last resort - use find to locate the file anywhere
+            import subprocess
+            find_cmd = "find / -name 'companies_to_import.csv' 2>/dev/null || true"
+            logger.info(f"Running command: {find_cmd}")
+
+            try:
+                result = subprocess.check_output(find_cmd, shell=True, text=True, timeout=10)
+                if result.strip():
+                    found_paths = result.strip().split('\n')
+                    logger.info(f"Find command found files at: {found_paths}")
+
+                    # Try these paths
+                    for found_path in found_paths:
+                        if os.path.exists(found_path) and os.access(found_path, os.R_OK):
+                            csv_path = found_path
+                            logger.info(f"Using file found by find command: {csv_path}")
+                            break
+                else:
+                    logger.error("Find command found no CSV files")
+            except Exception as cmd_err:
+                logger.error(f"Error running find command: {str(cmd_err)}")
+        except Exception as e:
+            logger.error(f"Error in last resort search: {str(e)}")
+
+        if not csv_path:
+            # If the CSV file does not exist, just return an error
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No companies_to_import.csv file found. Please create one in the project root directory or in /data directory and try again."
+            )
     
     # Process CSV data
     companies_to_import = []
