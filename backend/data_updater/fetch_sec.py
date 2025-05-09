@@ -128,14 +128,9 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
                 logger.info(f"Extracted date range: {start_date} to {end_date}")
 
         # Only proceed if we could extract a ticker
-        # NOTE: Remove the constraint that only works with 10-K
         if ticker and doc_type:
             logger.info(f"Using legacy method to fetch {doc_type} filings for {ticker} with date range {start_date} to {end_date}")
-            
-            # If it's not a 10-K and we don't have an API key, warn the user
-            if doc_type != "10-K":
-                logger.warning(f"Legacy method only supports 10-K filings. {doc_type} filings require the SEC API key.")
-                
+
             # Look up the company's CIK (important: don't use the cached list, always query SEC)
             cik = lookup_company_cik_from_sec(ticker)
             if cik:
@@ -145,52 +140,52 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
                     'name': f"{ticker}",
                     'cik': cik
                 }
-                
+
                 # Try to get a better company name
                 try:
                     submissions = get_company_submissions(cik)
                     if submissions and 'name' in submissions:
                         company['name'] = submissions['name']
-                    
-                    # Only extract 10-K filings - legacy method limitation
-                    # For other document types, we'll return an empty list
+
+                    # Extract filings of the requested document type
+                    filings = []
                     if doc_type == "10-K":
                         filings = extract_10k_filings(submissions, limit=limit)
-                        
-                        # Filter by date range if provided
-                        if start_date and end_date:
-                            start_dt = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
-                            end_dt = datetime.datetime.strptime(end_date, '%Y-%m-%d').date()
-                            
-                            filtered_filings = []
-                            for filing in filings:
-                                filing_date = filing['filing_date'].date()
-                                if start_dt <= filing_date <= end_dt:
-                                    filtered_filings.append(filing)
-                            
-                            logger.info(f"Filtered filings by date range {start_date} to {end_date}: "
-                                      f"{len(filings)} -> {len(filtered_filings)}")
-                            filings = filtered_filings
-                        
-                        # Format the filings to match the API response format
-                        formatted_filings = []
-                        for filing in filings:
-                            formatted_filings.append({
-                                'accessionNo': filing['accession_number'],
-                                'formType': filing['filing_type'],
-                                'filedAt': filing['filing_date'].strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-                                'linkToFilingDetails': filing['filing_url'],
-                                'ticker': ticker,
-                                'companyName': company['name'],
-                                'periodOfReport': filing['filing_date'].strftime('%Y-%m-%d'),
-                                'cik': cik
-                            })
-                        
-                        logger.info(f"Found {len(formatted_filings)} filings using legacy method")
-                        return formatted_filings
                     else:
-                        logger.warning(f"Legacy method cannot fetch {doc_type} filings - SEC API key required")
-                        return []
+                        # For other document types, try to extract them from recent filings
+                        filings = extract_filings_by_type(submissions, doc_type, limit=limit)
+
+                    # Filter by date range if provided
+                    if start_date and end_date and filings:
+                        start_dt = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
+                        end_dt = datetime.datetime.strptime(end_date, '%Y-%m-%d').date()
+
+                        filtered_filings = []
+                        for filing in filings:
+                            filing_date = filing['filing_date'].date()
+                            if start_dt <= filing_date <= end_dt:
+                                filtered_filings.append(filing)
+
+                        logger.info(f"Filtered filings by date range {start_date} to {end_date}: "
+                                  f"{len(filings)} -> {len(filtered_filings)}")
+                        filings = filtered_filings
+
+                    # Format the filings to match the API response format
+                    formatted_filings = []
+                    for filing in filings:
+                        formatted_filings.append({
+                            'accessionNo': filing['accession_number'],
+                            'formType': filing['filing_type'],
+                            'filedAt': filing['filing_date'].strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                            'linkToFilingDetails': filing['filing_url'],
+                            'ticker': ticker,
+                            'companyName': company['name'],
+                            'periodOfReport': filing['filing_date'].strftime('%Y-%m-%d'),
+                            'cik': cik
+                        })
+
+                    logger.info(f"Found {len(formatted_filings)} filings using legacy method")
+                    return formatted_filings
                 except Exception as e:
                     logger.error(f"Error using legacy method: {str(e)}")
 
@@ -421,58 +416,93 @@ def fetch_filings_by_query_params(ticker: str, doc_type: str, start_date: str, e
 # Legacy functions maintained for backward compatibility
 def extract_10k_filings(submissions_data: Dict[str, Any], limit: int = 5) -> List[Dict[str, Any]]:
     """Extract 10-K filings from SEC submission data.
-    
+
     Args:
         submissions_data: SEC submission data for a company
         limit: Maximum number of 10-K filings to extract
-    
+
     Returns:
         List of dictionaries with 10-K filing information
     """
+    return extract_filings_by_type(submissions_data, '10-K', limit)
+
+
+def extract_filings_by_type(submissions_data: Dict[str, Any], form_type: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """Extract filings of a specific type from SEC submission data.
+
+    Args:
+        submissions_data: SEC submission data for a company
+        form_type: Type of filing to extract (e.g., '10-K', '10-Q', '8-K')
+        limit: Maximum number of filings to extract
+
+    Returns:
+        List of dictionaries with filing information
+    """
     filings = []
     recent_filings = submissions_data.get('filings', {}).get('recent', {})
-    
+
     # Check if we have the necessary data
     if not recent_filings:
+        logger.warning(f"No recent filings data found for this company")
         return filings
-    
-    # Get the indices of 10-K filings
+
+    # Get the indices of the specified filing type
     form_types = recent_filings.get('form', [])
     accession_numbers = recent_filings.get('accessionNumber', [])
     filing_dates = recent_filings.get('filingDate', [])
     primary_doc_urls = recent_filings.get('primaryDocument', [])
     filing_count = len(form_types)
-    
-    # Extract 10-K filings
+
+    logger.info(f"Found {filing_count} filings in recent data, looking for {form_type}")
+
+    # Extract filings of the requested type
     count = 0
     for i in range(filing_count):
-        if form_types[i] == '10-K' and count < limit:
+        if form_types[i] == form_type and count < limit:
             # Convert filing date to datetime
             try:
                 filing_date = datetime.datetime.strptime(filing_dates[i], '%Y-%m-%d')
                 fiscal_year = filing_date.year
-                
+
                 # Extract the primary document URL
                 accession_num = accession_numbers[i].replace('-', '')
                 primary_doc = primary_doc_urls[i]
                 cik = submissions_data.get('cik')
-                
+
                 # Construct the filing URL
                 filing_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_num}/{primary_doc}"
-                
+
+                # Determine fiscal period based on filing type
+                fiscal_period = 'FY'  # Default for 10-K
+                if form_type == '10-Q' or form_type == '10-Q/A':
+                    # Determine quarter based on filing date
+                    month = filing_date.month
+                    if 1 <= month <= 3:
+                        fiscal_period = 'Q1'
+                    elif 4 <= month <= 6:
+                        fiscal_period = 'Q2'
+                    elif 7 <= month <= 9:
+                        fiscal_period = 'Q3'
+                    else:
+                        fiscal_period = 'Q4'
+                elif form_type == '8-K' or form_type == '8-K/A':
+                    fiscal_period = 'Current'
+
                 filings.append({
                     'accession_number': accession_numbers[i],
-                    'filing_type': '10-K',
+                    'filing_type': form_type,
                     'filing_date': filing_date,
                     'filing_url': filing_url,
                     'fiscal_year': fiscal_year,
-                    'fiscal_period': 'FY'  # 10-K is always annual
+                    'fiscal_period': fiscal_period
                 })
-                
+
                 count += 1
+                logger.info(f"Found {form_type} filing from {filing_date}")
             except Exception as e:
                 logger.error(f"Error processing filing {accession_numbers[i]}: {str(e)}")
-    
+
+    logger.info(f"Extracted {len(filings)} {form_type} filings")
     return filings
 
 

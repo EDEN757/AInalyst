@@ -14,6 +14,7 @@ import time
 
 from ..db.database import get_db, SessionLocal
 from ..db import crud
+from ..core.config import settings
 from data_updater.fetch_sec import fetch_filings_by_query_params
 from data_updater.update_job import process_company_data
 
@@ -67,74 +68,157 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
     try:
         # Read and parse CSV
         with open(csv_path, 'r') as file:
-            csv_reader = csv.reader(file)
-            
-            # Skip header row
-            header = next(csv_reader)
-            expected_header_old = ["ticker", "doc_type", "date_range"]
-            expected_header_new = ["ticker", "doc_type", "start_date", "end_date"]
-            
-            # Validate header for either format
-            if not (all(column in header for column in expected_header_old) or 
-                    all(column in header for column in expected_header_new)):
+            # Try to determine if there's a BOM (Byte Order Mark) at the beginning of the file
+            content = file.read()
+            if content.startswith('\ufeff'):
+                # Remove BOM if present
+                content = content[1:]
+
+            # Parse CSV from the content
+            csv_reader = csv.reader(content.splitlines())
+            rows = list(csv_reader)
+
+            if not rows:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"CSV must have either columns {', '.join(expected_header_old)} or {', '.join(expected_header_new)}"
+                    detail="CSV file is empty"
                 )
+
+            # Get the header (first row)
+            header = [col.strip().lower() for col in rows[0]]
+            logger.info(f"CSV header found: {header}")
+
+            # Define expected headers and try to map them
+            # Support various header formats and column names
+            header_mappings = {
+                'ticker': ['ticker', 'symbol', 'company', 'company_symbol'],
+                'doc_type': ['doc_type', 'doctype', 'document_type', 'filing_type', 'form_type', 'form'],
+                'start_date': ['start_date', 'startdate', 'start', 'from_date', 'from', 'date_from'],
+                'end_date': ['end_date', 'enddate', 'end', 'to_date', 'to', 'date_to']
+            }
+
+            # Find actual column indices for each required field
+            column_indices = {}
+            for field, possible_names in header_mappings.items():
+                found = False
+                for i, col in enumerate(header):
+                    if col.lower() in possible_names:
+                        column_indices[field] = i
+                        found = True
+                        break
+
+                if not found and field not in ['start_date', 'end_date']:  # These might be in a combined field
+                    logger.warning(f"Could not find column for {field} in header: {header}")
+
+            # Check if we have at least ticker and doc_type columns
+            if 'ticker' not in column_indices or 'doc_type' not in column_indices:
+                # Check if the CSV might have no header
+                if len(rows) > 0 and len(rows[0]) >= 4:
+                    # Assume it's a CSV without header and use standard column order
+                    logger.info("CSV appears to have no header, using default column order")
+                    has_header = False
+                    column_indices = {
+                        'ticker': 0,
+                        'doc_type': 1,
+                        'start_date': 2,
+                        'end_date': 3
+                    }
+                    start_row = 0  # Start processing from the first row
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"CSV must have at least 'ticker' and 'doc_type' columns."
+                    )
+            else:
+                has_header = True
+                start_row = 1  # Skip the header row
+
+            # Check for date columns or a combined date_range column
+            date_range_format = False
+            date_range_index = None
+
+            # Check if we need to look for a combined date_range column
+            if 'start_date' not in column_indices or 'end_date' not in column_indices:
+                for i, col in enumerate(header):
+                    if col.lower() in ['date_range', 'daterange', 'dates', 'period', 'range']:
+                        date_range_format = True
+                        date_range_index = i
+                        logger.info(f"Found date_range column at index {i}")
+                        break
+
+                if date_range_format and date_range_index is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Could not find 'start_date' and 'end_date' columns or a 'date_range' column"
+                    )
 
             # Regular expression to validate date format YYYY-MM-DD
             date_pattern = r'^\d{4}-\d{2}-\d{2}$'
-            
-            # Parse rows
-            for row_index, row in enumerate(csv_reader, start=2):  # Start at 2 for 1-based row index (after header)
-                if len(row) < 3:
-                    logger.warning(f"Skipping row {row_index} - insufficient data: {row}")
-                    continue  # Skip empty rows
 
-                ticker = row[0].strip().upper() if row[0] else ''
-                
+            # Parse rows
+            for row_index, row in enumerate(rows[start_row:], start=start_row+1):  # 1-based row index
+                if len(row) < 2:
+                    logger.warning(f"Skipping row {row_index} - insufficient data: {row}")
+                    continue  # Skip empty or very short rows
+
+                # Extract ticker using mapped column index
+                ticker_index = column_indices.get('ticker', 0)
+                ticker = row[ticker_index].strip().upper() if ticker_index < len(row) and row[ticker_index] else ''
+
                 if not ticker:
                     logger.warning(f"Skipping row {row_index} - missing ticker")
                     continue
-                    
-                doc_type = row[1].strip() if len(row) > 1 and row[1] else ''
-                
+
+                # Extract doc_type using mapped column index
+                doc_type_index = column_indices.get('doc_type', 1)
+                doc_type = row[doc_type_index].strip() if doc_type_index < len(row) and row[doc_type_index] else ''
+
                 if not doc_type:
                     logger.warning(f"Skipping row {row_index} - missing document type")
                     continue
 
-                # Handle both formats:
-                # 1. If date_range is a separate column with comma: "2020-01-01,2025-12-31"
-                # 2. If start_date and end_date are separate columns: "2020-01-01" "2025-12-31"
-                if len(row) >= 4 and row[2] and row[3]:
-                    # Assume separate columns format
-                    start_date = row[2].strip()
-                    end_date = row[3].strip()
-                    logger.info(f"Row {row_index}: Using separate date columns: {start_date} to {end_date}")
-                elif len(row) >= 3 and row[2] and "," in row[2]:
-                    # Try to split the third column by comma
-                    date_range = row[2].strip().split(',')
-                    if len(date_range) == 2:
-                        start_date = date_range[0].strip()
-                        end_date = date_range[1].strip()
-                        logger.info(f"Row {row_index}: Using date_range column with comma: {start_date} to {end_date}")
-                    else:
-                        logger.warning(f"Skipping row {row_index} for {ticker} - invalid date range format: {row[2]}")
+                # Extract dates based on format
+                if date_range_format:
+                    # Process combined date_range format
+                    if date_range_index >= len(row) or not row[date_range_index]:
+                        logger.warning(f"Skipping row {row_index} for {ticker} - missing date range")
                         continue
+
+                    date_parts = row[date_range_index].strip().split(',')
+                    if len(date_parts) != 2:
+                        logger.warning(f"Skipping row {row_index} for {ticker} - invalid date range format: {row[date_range_index]}")
+                        continue
+
+                    start_date = date_parts[0].strip()
+                    end_date = date_parts[1].strip()
+                    logger.info(f"Row {row_index}: Using date_range column: {start_date} to {end_date}")
                 else:
-                    logger.warning(f"Skipping row {row_index} for {ticker} - missing or invalid date information")
-                    continue
+                    # Process separate start_date and end_date columns
+                    start_date_index = column_indices.get('start_date', 2)
+                    end_date_index = column_indices.get('end_date', 3)
+
+                    if start_date_index >= len(row) or not row[start_date_index]:
+                        logger.warning(f"Skipping row {row_index} for {ticker} - missing start date")
+                        continue
+
+                    if end_date_index >= len(row) or not row[end_date_index]:
+                        logger.warning(f"Skipping row {row_index} for {ticker} - missing end date")
+                        continue
+
+                    start_date = row[start_date_index].strip()
+                    end_date = row[end_date_index].strip()
+                    logger.info(f"Row {row_index}: Using separate date columns: {start_date} to {end_date}")
 
                 # Validate date format
                 if not re.match(date_pattern, start_date) or not re.match(date_pattern, end_date):
                     logger.warning(f"Skipping row {row_index} for {ticker} - invalid date format (should be YYYY-MM-DD): {start_date} or {end_date}")
                     continue
-                
+
                 # Validate doc_type (optional: add more validation if needed)
                 valid_doc_types = ['10-K', '10-Q', '8-K', '10-K/A', '10-Q/A', '8-K/A']
                 if doc_type not in valid_doc_types:
                     logger.warning(f"Warning: {ticker} - doc_type '{doc_type}' is not in standard types {valid_doc_types}, but proceeding anyway")
-                
+
                 companies_to_import.append({
                     "symbol": ticker,
                     "doc_type": doc_type,
@@ -265,11 +349,42 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
 @router.get("/companies/csv-template")
 async def get_csv_template():
     """Return a CSV template for company import"""
-    # Basic template content with the new format - with more diverse examples
-    csv_content = "ticker,doc_type,start_date,end_date\nAAPL,10-K,2020-01-01,2022-12-31\nMSFT,10-Q,2022-01-01,2022-12-31\nGOOGL,8-K,2023-01-01,2023-12-31\nJPM,10-K,2019-01-01,2021-12-31\nGS,10-K,2015-01-01,2016-12-31"
-    
+    # Create CSV content in memory using the csv module for proper formatting
+    import io
+
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+
+    # Write header row
+    writer.writerow(["ticker", "doc_type", "start_date", "end_date"])
+
+    # Write example rows with diverse companies and document types
+    example_data = [
+        ["AAPL", "10-K", "2020-01-01", "2022-12-31"],
+        ["MSFT", "10-Q", "2022-01-01", "2022-12-31"],
+        ["GOOGL", "8-K", "2023-01-01", "2023-12-31"],
+        ["TSLA", "10-K", "2020-01-01", "2022-12-31"],
+        ["JPM", "10-K", "2019-01-01", "2021-12-31"],
+        ["GS", "10-K", "2015-01-01", "2016-12-31"]
+    ]
+
+    for row in example_data:
+        writer.writerow(row)
+
+    csv_content = output.getvalue()
+
+    # Check if the SEC API key is available to provide accurate guidance
+    has_sec_api_key = bool(settings.SEC_API_KEY)
+    api_key_note = ""
+    if not has_sec_api_key:
+        api_key_note = "\n\nNOTE: Without an SEC API key, only 10-K filings can be reliably imported. Other document types may work with limitations. Consider adding an SEC API key for full functionality."
+
     return {
         "content": csv_content,
         "filename": "companies_to_import.csv",
-        "instructions": "Place this file in the project root directory. CSV should have four columns:\n1. ticker: Company ticker symbol (e.g., AAPL)\n2. doc_type: SEC filing type (e.g., 10-K, 10-Q, 8-K)\n3. start_date: Start date in ISO format (YYYY-MM-DD)\n4. end_date: End date in ISO format (YYYY-MM-DD)\n\nNOTE: Without an SEC API key, only 10-K filings can be imported. Other document types require an SEC API key."
+        "instructions": "Place this file in the project root directory. CSV should have four columns:\n"
+                       "1. ticker: Company ticker symbol (e.g., AAPL)\n"
+                       "2. doc_type: SEC filing type (e.g., 10-K, 10-Q, 8-K)\n"
+                       "3. start_date: Start date in ISO format (YYYY-MM-DD)\n"
+                       "4. end_date: End date in ISO format (YYYY-MM-DD)" + api_key_note
     }
