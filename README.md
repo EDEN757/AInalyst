@@ -1,6 +1,6 @@
 # AInalyst
 
-A Retrieval-Augmented Generation (RAG) chatbot that enables users to query information from SEC filings of companies using natural language.
+A Retrieval-Augmented Generation (RAG) chatbot that enables users to query information from SEC 10-K filings of companies using natural language.
 
 ## Project Structure
 
@@ -33,7 +33,7 @@ AInalyst/
 │   ├── data_updater/
 │   │   ├── __init__.py
 │   │   ├── create_embeddings.py    # Uses ONLY Embedding config
-│   │   ├── fetch_sec.py            # Fetches SEC filings
+│   │   ├── fetch_sec.py            # Fetches SEC 10-K filings
 │   │   ├── process_docs.py         # Processes filings into chunks
 │   │   └── update_job.py           # Main update pipeline
 │   ├── Dockerfile
@@ -81,7 +81,7 @@ This separation allows you to optimize for different use cases:
 - **Configurable Models**: Set different providers and models for embedding vs. chat generation
 - **Interactive Chat Interface**: React-based UI with filtering by company and year
 - **Company Management Interface**: Add, view, and delete companies directly through the UI
-- **Document Processing Pipeline**: Fetches, extracts, chunks, and embeds SEC filings
+- **Document Processing Pipeline**: Fetches, extracts, chunks, and embeds SEC 10-K filings
 - **CSV Import**: Import companies from a CSV file
 - **Containerized Architecture**: Everything runs in Docker containers for easy deployment
 
@@ -91,8 +91,8 @@ This separation allows you to optimize for different use cases:
 - **Database**: PostgreSQL with pgvector extension
 - **Frontend**: React.js, Axios
 - **AI Services**:
-  - **Embedding**: OpenAI or Google Generative AI (Gemini)
-  - **Chat**: OpenAI, Google Generative AI, or Anthropic Claude
+  - **Embedding**: OpenAI
+  - **Chat**: OpenAI
 - **Containerization**: Docker, Docker Compose
 
 ## Setup Instructions
@@ -100,7 +100,7 @@ This separation allows you to optimize for different use cases:
 ### Prerequisites
 
 - Docker and Docker Compose
-- API keys for the LLM providers you plan to use (OpenAI, Google, Anthropic)
+- API keys for OpenAI
 
 ### Installation
 
@@ -126,23 +126,18 @@ This separation allows you to optimize for different use cases:
 
    b. **Chat Generation Configuration** (Used ONLY for final answer generation):
       ```
-      CHAT_PROVIDER=CLAUDE
-      CHAT_MODEL=claude-3-sonnet-20240229
+      CHAT_PROVIDER=OPENAI
+      CHAT_MODEL=gpt-4-turbo
       ```
 
-   c. **API Keys** (Add keys for the providers you selected above):
+   c. **API Keys**:
       ```
       OPENAI_API_KEY=your_openai_key
-      GOOGLE_API_KEY=your_google_key
-      ANTHROPIC_API_KEY=your_anthropic_key
       ```
 
    d. **SEC Settings**:
       ```
       SEC_EMAIL=youremail@example.com
-      # Optional: For using SEC API to query multiple filing types
-      # Get your key from https://sec-api.io
-      SEC_API_KEY=your_sec_api_key_here
       ```
 
    e. **Database Settings**:
@@ -163,47 +158,53 @@ This separation allows you to optimize for different use cases:
 
 ### Running the Application
 
-1. Start all services:
+1. Edit the `companies_to_import.csv` file in the project root with the companies you want to analyze:
+   ```
+   ticker,cik,start_date,end_date
+   AAPL,0000320193,2020-01-01,2023-12-31
+   MSFT,0000789019,2020-01-01,2023-12-31
+   GOOGL,0001652044,2020-01-01,2023-12-31
+   ```
+
+2. Start all services:
    ```
    docker-compose up --build -d
    ```
 
-2. Access the application:
+3. Access the application:
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:8000
    - API Docs: http://localhost:8000/docs
 
-3. Import companies using the CSV method:
-   - Edit `companies_to_import.csv` in the project root
+4. Import companies using the CSV method:
    - Go to Company Management tab in the UI
    - Click "Import from CSV"
 
-## Importing Companies from CSV
+## Importing Companies Using CSV
 
-The system uses a CSV file to import companies and their filings from the SEC. The CSV file should be placed in the project root directory as `companies_to_import.csv`.
+The system uses a CSV file to import companies and their 10-K filings from the SEC. The CSV file should be placed in the project root directory as `companies_to_import.csv`.
 
 ### CSV Format
 
 The CSV file should contain the following columns:
 
 - `ticker`: Company ticker symbol (e.g., AAPL) - **Required**
-- `cik`: SEC Central Index Key (e.g., 0000320193) - *Optional but recommended*
-- `doc_type`: SEC filing type (e.g., 10-K, 10-Q, 8-K) - **Required**
-- `start_date`: Start date in ISO format (YYYY-MM-DD) - *Optional*
-- `end_date`: End date in ISO format (YYYY-MM-DD) - *Optional*
+- `cik`: SEC Central Index Key (e.g., 0000320193) - *Optional but recommended for faster processing*
+- `start_date`: Start date in ISO format (YYYY-MM-DD) - *Optional (defaults to 3 years ago)*
+- `end_date`: End date in ISO format (YYYY-MM-DD) - *Optional (defaults to current year)*
 
 Example:
 ```
-ticker,cik,doc_type,start_date,end_date
-AAPL,0000320193,10-K,2020-01-01,2023-12-31
-MSFT,0000789019,10-K,2020-01-01,2023-12-31
-GOOGL,0001652044,10-K,2020-01-01,2023-12-31
+ticker,cik,start_date,end_date
+AAPL,0000320193,2020-01-01,2023-12-31
+MSFT,0000789019,2020-01-01,2023-12-31
+GOOGL,0001652044,2020-01-01,2023-12-31
 ```
 
 #### Notes:
+- This application only supports 10-K filings
 - If `cik` is provided, it speeds up the import process
 - If `start_date` or `end_date` are not provided, reasonable defaults will be used
-- Valid `doc_type` values include: 10-K, 10-Q, 8-K, 10-K/A, 10-Q/A, 8-K/A, S-1, etc.
 - Processing happens in the background - check the status in the UI
 
 ### Import Process
@@ -223,7 +224,7 @@ GOOGL,0001652044,10-K,2020-01-01,2023-12-31
    - Import companies via CSV
    - Delete companies you no longer need
 
-2. **Chat Interface**: Enter questions about companies' filings:
+2. **Chat Interface**: Enter questions about companies' 10-K filings:
    - Filter by specific companies using the dropdown
    - Filter by specific filing year
    - View source documents for each answer
@@ -237,10 +238,23 @@ Example questions:
 
 ### CSV Import Issues
 
-- Make sure the CSV file is named exactly `companies_to_import.csv`
-- Place the file in the project root directory (not inside backend or frontend folders)
-- Check that the CSV has the correct format and headers
-- Verify that the Docker containers have access to the file
+- **Missing CSV File**: Make sure the CSV file is named exactly `companies_to_import.csv` and placed in the project root directory.
+  
+  - **Solution**: If the file doesn't exist, the system will create a template file automatically. You can also use the API endpoint `GET /companies/csv-template` to get a template.
+
+- **CSV Format Issues**: Ensure the CSV has at least a ticker column. The system logs will show which rows were skipped and why.
+  
+  - **Solution**: Follow the format described in the "CSV Format" section above.
+
+- **No Companies Found**: Check the logs to see if any companies were successfully extracted from the CSV.
+  
+  - **Solution**: Verify that the CSV contains valid ticker symbols.
+
+### SEC API Rate Limits
+
+- **Rate Limit Errors**: The SEC API has rate limits that can cause fetch failures.
+  
+  - **Solution**: The system includes pauses to respect rate limits, but if you're processing many companies, you might need to split the imports into smaller batches.
 
 ### Connection Issues
 
@@ -253,17 +267,54 @@ If the frontend can't connect to the backend:
 
 ### No Context Found / Empty Search Results
 
-If the system reports "No context found" or gives generic responses despite having companies in the database, the embeddings may not be fully generated. Run this command to create missing embeddings:
+If the system reports "No context found" or gives generic responses despite having companies in the database:
 
-```bash
-docker exec -it sp500_rag_backend python -c 'from app.db.database import SessionLocal; from data_updater.create_embeddings import create_embeddings; db = SessionLocal(); print(create_embeddings(db)); db.close()'
-```
+1. **Check Database Status**: Verify that companies, filings, and chunks are properly imported:
+   ```bash
+   docker-compose exec db psql -U postgres -d sp500_db -c "SELECT COUNT(*) FROM companies;"
+   docker-compose exec db psql -U postgres -d sp500_db -c "SELECT COUNT(*) FROM filings;"
+   docker-compose exec db psql -U postgres -d sp500_db -c "SELECT COUNT(*) FROM text_chunks WHERE embedded = true;"
+   ```
 
-You can monitor progress with:
+2. **Manually Create Embeddings**: If necessary, force the creation of embeddings:
+   ```bash
+   docker-compose exec backend python -c 'from app.db.database import SessionLocal; from data_updater.create_embeddings import create_embeddings; db = SessionLocal(); print(create_embeddings(db)); db.close()'
+   ```
 
-```bash
-docker exec -it sp500_rag_db psql -U postgres -d <your_db_name> -c "SELECT COUNT(*) as total_chunks, SUM(CASE WHEN embedded THEN 1 ELSE 0 END) as embedded_chunks FROM text_chunks;"
-```
+3. **Run Data Updater**: Process any unprocessed filings:
+   ```bash
+   docker-compose exec backend python run_data_updater.py
+   ```
+
+4. **Monitor Progress**: Check embedding progress with:
+   ```bash
+   docker-compose exec db psql -U postgres -d sp500_db -c "SELECT COUNT(*) as total_chunks, SUM(CASE WHEN embedded THEN 1 ELSE 0 END) as embedded_chunks FROM text_chunks;"
+   ```
+
+### API Implementation Issues
+
+If you encounter problems with the API:
+
+1. **Check OpenAI API Key**: Verify that your OpenAI API key is valid and has sufficient credits.
+2. **Enable Debug Logging**: Add `LOG_LEVEL=DEBUG` to your .env file for more detailed logs.
+3. **Inspect API Documentation**: Visit http://localhost:8000/docs to explore available endpoints.
+
+## Common Issues and Solutions
+
+### Problem: Import Process Takes Too Long
+
+- **Cause**: Processing many companies at once or SEC API rate limits.
+- **Solution**: Import fewer companies at a time or provide CIK values to speed up lookups.
+
+### Problem: Search Returns No Results
+
+- **Cause**: No embedded chunks or query not matching available content.
+- **Solution**: Verify embeddings exist (see above). Try different search terms or filter by companies that you know have data.
+
+### Problem: Database Connection Errors
+
+- **Cause**: PostgreSQL not fully initialized or incorrect credentials.
+- **Solution**: Check if the database container is running and verify credentials in .env file.
 
 ## License
 
@@ -272,4 +323,4 @@ docker exec -it sp500_rag_db psql -U postgres -d <your_db_name> -c "SELECT COUNT
 ## Acknowledgments
 
 - This project uses the SEC's EDGAR database for company filings
-- Built with multiple LLM providers for flexible deployment options
+- Built with OpenAI for embeddings and chat generation

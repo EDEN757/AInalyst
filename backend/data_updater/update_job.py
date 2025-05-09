@@ -1,6 +1,5 @@
 import time
 import logging
-import argparse
 import sys
 import os
 from typing import Dict, List, Any
@@ -9,11 +8,10 @@ from typing import Dict, List, Any
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db.database import SessionLocal, Base, engine
-from app.core.config import settings
 from app.db import crud
 from app.models.database_models import Company, Filing, TextChunk
 
-from data_updater.fetch_sec import fetch_companies_and_filings, fetch_filing_document
+from data_updater.fetch_sec import fetch_filing_document
 from data_updater.process_docs import process_filing_text
 from data_updater.create_embeddings import create_embeddings
 
@@ -198,18 +196,8 @@ def process_company_data(db, data):
         }
 
 
-def run_update_job(mode='CSV_ONLY', skip_fetch=False, skip_process=False, skip_embeddings=False):
-    """Run the complete data update job.
-
-    Args:
-        mode: Only 'CSV_ONLY' is supported now
-        skip_fetch: Skip fetching new data
-        skip_process: Skip processing filings
-        skip_embeddings: Skip creating embeddings
-
-    Returns:
-        Summary of the update job
-    """
+def run_update_job():
+    """Run the complete data update job."""
     start_time = time.time()
     summary = {}
 
@@ -220,20 +208,13 @@ def run_update_job(mode='CSV_ONLY', skip_fetch=False, skip_process=False, skip_e
     db = SessionLocal()
 
     try:
-        # 1. Fetch companies and filings - skipped in CSV_ONLY mode
-        if not skip_fetch:
-            logger.info("Automatic data fetching is disabled. Use CSV import instead.")
-            summary["fetch"] = {"companies_created": 0, "filings_created": 0}
+        # 1. Process filings into chunks
+        logger.info("Processing filings...")
+        summary["process"] = process_filings(db)
 
-        # 2. Process filings into chunks
-        if not skip_process:
-            logger.info("Processing filings...")
-            summary["process"] = process_filings(db)
-
-        # 3. Create embeddings for chunks
-        if not skip_embeddings:
-            logger.info("Creating embeddings...")
-            summary["embeddings"] = create_embeddings(db)
+        # 2. Create embeddings for chunks
+        logger.info("Creating embeddings...")
+        summary["embeddings"] = create_embeddings(db)
 
         duration = time.time() - start_time
         summary["duration_seconds"] = round(duration, 2)
@@ -254,20 +235,5 @@ def run_update_job(mode='CSV_ONLY', skip_fetch=False, skip_process=False, skip_e
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run the SEC filings update job")
-    parser.add_argument('--mode', choices=['CSV_ONLY'], default='CSV_ONLY',
-                        help='Mode to run the job in: only CSV_ONLY is supported now')
-    parser.add_argument('--skip-fetch', action='store_true', help='Skip fetching new data')
-    parser.add_argument('--skip-process', action='store_true', help='Skip processing filings')
-    parser.add_argument('--skip-embeddings', action='store_true', help='Skip creating embeddings')
-
-    args = parser.parse_args()
-
-    result = run_update_job(
-        mode=args.mode,
-        skip_fetch=args.skip_fetch,
-        skip_process=args.skip_process,
-        skip_embeddings=args.skip_embeddings
-    )
-
+    result = run_update_job()
     logger.info(f"Update job completed with result: {result}")

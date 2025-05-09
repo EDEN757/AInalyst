@@ -4,7 +4,6 @@ Script to run the data updater from the Docker container
 """
 import os
 import sys
-import argparse
 import logging
 
 # Configure logging
@@ -29,26 +28,28 @@ except ImportError as e:
     sys.exit(1)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run the SEC filings update job")
-    parser.add_argument('--mode', choices=['CSV_ONLY'], default='CSV_ONLY',
-                        help='Mode to run the job in: only CSV_ONLY is supported now')
-    parser.add_argument('--skip-fetch', action='store_true', help='Skip fetching new data')
-    parser.add_argument('--skip-process', action='store_true', help='Skip processing filings')
-    parser.add_argument('--skip-embeddings', action='store_true', help='Skip creating embeddings')
-
-    args = parser.parse_args()
-
-    logger.info("Starting update job with CSV import only")
+    logger.info("Starting data updater job")
     
     try:
-        result = run_update_job(
-            mode=args.mode,
-            skip_fetch=args.skip_fetch,
-            skip_process=args.skip_process,
-            skip_embeddings=args.skip_embeddings
-        )
+        # Run the update job
+        result = run_update_job()
         
-        logger.info(f"Update job completed with result: {result}")
+        if result["status"] == "completed":
+            logger.info(f"Job completed successfully in {result['duration_seconds']} seconds")
+            
+            # Log processing summary
+            if "process" in result:
+                process_result = result["process"]
+                logger.info(f"Processed {process_result.get('filings_processed', 0)} filings with {process_result.get('chunks_created', 0)} chunks")
+            
+            # Log embedding summary
+            if "embeddings" in result:
+                embed_result = result["embeddings"]
+                logger.info(f"Created {embed_result.get('processed_count', 0)} embeddings with {embed_result.get('error_count', 0)} errors")
+        else:
+            logger.error(f"Job failed: {result.get('error', 'Unknown error')}")
+            sys.exit(1)
+            
     except Exception as e:
         logger.error(f"Error running update job: {e}")
         sys.exit(1)
