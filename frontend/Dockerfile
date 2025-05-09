@@ -5,8 +5,10 @@ WORKDIR /app
 # Copy package.json and package-lock.json
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies with clean cache and force reinstall
+RUN npm cache clean --force && \
+    npm install --no-cache --force && \
+    npm install react-router-dom@6.10.0
 
 # Copy the rest of the application
 COPY . .
