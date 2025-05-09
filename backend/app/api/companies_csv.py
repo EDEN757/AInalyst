@@ -9,6 +9,8 @@ import json
 from typing import List
 import datetime
 import re
+import os
+import time
 
 from ..db.database import get_db, SessionLocal
 from ..db import crud
@@ -23,8 +25,6 @@ router = APIRouter()
 @router.post("/companies/import-from-csv", status_code=status.HTTP_202_ACCEPTED)
 async def import_companies_from_csv(db: Session = Depends(get_db)):
     """Import companies from the CSV file in the project root"""
-    import os
-
     # Debug the current directory and environment
     current_dir = os.getcwd()
     logger.info(f"Current working directory: {current_dir}")
@@ -55,38 +55,12 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
             break
     
     if not csv_path:
-        # Create a default CSV file in /app directory
-        default_csv_path = "/app/companies_to_import.csv"
-        try:
-            with open(default_csv_path, 'w') as f:
-                f.write("ticker,doc_type,start_date,end_date\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-K,2020-01-01,2025-12-31\nGOOGL,10-K,2020-01-01,2025-12-31")
-            logger.info(f"Created default CSV file at {default_csv_path}")
-            csv_path = default_csv_path
-        except Exception as e:
-            logger.error(f"Failed to create default CSV file: {str(e)}")
-            # Try a different location if /app is not writable
-            alt_paths = [
-                os.path.join(current_dir, "companies_to_import.csv"),
-                "./companies_to_import.csv"
-            ]
-            
-            created = False
-            for path in alt_paths:
-                try:
-                    with open(path, 'w') as f:
-                        f.write("ticker,doc_type,start_date,end_date\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-K,2020-01-01,2025-12-31\nGOOGL,10-K,2020-01-01,2025-12-31")
-                    logger.info(f"Created default CSV file at alternate location: {path}")
-                    csv_path = path
-                    created = True
-                    break
-                except Exception as err:
-                    logger.error(f"Failed to create CSV at {path}: {str(err)}")
-            
-            if not created:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Could not find or create CSV file. Tried multiple locations. Error: {str(e)}"
-                )
+        # If the CSV file does not exist, just return an error
+        # No longer creating a default CSV automatically
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No companies_to_import.csv file found. Please create one in the project root directory and try again."
+        )
     
     # Process CSV data
     companies_to_import = []
@@ -112,33 +86,48 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
             date_pattern = r'^\d{4}-\d{2}-\d{2}$'
             
             # Parse rows
-            for row in csv_reader:
-                if len(row) < 4 or not row[0] or not row[1] or not row[2] or not row[3]:
-                    logger.warning(f"Skipping row - insufficient data: {row}")
-                    continue  # Skip empty or insufficient rows
+            for row_index, row in enumerate(csv_reader, start=2):  # Start at 2 for 1-based row index (after header)
+                if len(row) < 3:
+                    logger.warning(f"Skipping row {row_index} - insufficient data: {row}")
+                    continue  # Skip empty rows
 
-                ticker = row[0].strip().upper()
-                doc_type = row[1].strip()
+                ticker = row[0].strip().upper() if row[0] else ''
+                
+                if not ticker:
+                    logger.warning(f"Skipping row {row_index} - missing ticker")
+                    continue
+                    
+                doc_type = row[1].strip() if len(row) > 1 and row[1] else ''
+                
+                if not doc_type:
+                    logger.warning(f"Skipping row {row_index} - missing document type")
+                    continue
 
                 # Handle both formats:
                 # 1. If date_range is a separate column with comma: "2020-01-01,2025-12-31"
                 # 2. If start_date and end_date are separate columns: "2020-01-01" "2025-12-31"
-                if len(row) >= 4:
+                if len(row) >= 4 and row[2] and row[3]:
                     # Assume separate columns format
                     start_date = row[2].strip()
                     end_date = row[3].strip()
-                else:
+                    logger.info(f"Row {row_index}: Using separate date columns: {start_date} to {end_date}")
+                elif len(row) >= 3 and row[2] and "," in row[2]:
                     # Try to split the third column by comma
                     date_range = row[2].strip().split(',')
-                    if len(date_range) != 2:
-                        logger.warning(f"Skipping {ticker} - invalid date range format: {row[2]}")
+                    if len(date_range) == 2:
+                        start_date = date_range[0].strip()
+                        end_date = date_range[1].strip()
+                        logger.info(f"Row {row_index}: Using date_range column with comma: {start_date} to {end_date}")
+                    else:
+                        logger.warning(f"Skipping row {row_index} for {ticker} - invalid date range format: {row[2]}")
                         continue
-                    start_date = date_range[0].strip()
-                    end_date = date_range[1].strip()
+                else:
+                    logger.warning(f"Skipping row {row_index} for {ticker} - missing or invalid date information")
+                    continue
 
                 # Validate date format
                 if not re.match(date_pattern, start_date) or not re.match(date_pattern, end_date):
-                    logger.warning(f"Skipping {ticker} - invalid date format (should be YYYY-MM-DD): {start_date} or {end_date}")
+                    logger.warning(f"Skipping row {row_index} for {ticker} - invalid date format (should be YYYY-MM-DD): {start_date} or {end_date}")
                     continue
                 
                 # Validate doc_type (optional: add more validation if needed)
@@ -151,6 +140,7 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                     "doc_type": doc_type,
                     "start_date": start_date,
                     "end_date": end_date,
+                    "row_index": row_index  # Keep track of row index for better error reporting
                 })
     
     except Exception as e:
@@ -166,13 +156,22 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
             detail="No valid companies found in CSV"
         )
     
+    # Log what we're about to process
+    logger.info(f"Preparing to process {len(companies_to_import)} companies/filings:")
+    for company in companies_to_import:
+        logger.info(f"  - {company['symbol']}: {company['doc_type']} from {company['start_date']} to {company['end_date']} (CSV row {company['row_index']})")
+    
     # Process companies directly instead of using a subprocess
     def process_companies_in_thread():
-        # List to track processed companies
+        total_companies = len(companies_to_import)
         processed_count = 0
+        success_count = 0
+        error_count = 0
+        
+        logger.info(f"Starting background thread to process {total_companies} companies/filings")
         
         # Process each company individually with its own database session
-        for company in companies_to_import:
+        for company_index, company in enumerate(companies_to_import, start=1):
             # Create a fresh database session for each company
             db = SessionLocal()
             
@@ -181,14 +180,19 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                 doc_type = company["doc_type"]
                 start_date = company["start_date"]
                 end_date = company["end_date"]
+                row_index = company.get("row_index", "unknown")
                 
                 # Create a query description for logging
-                query_desc = f"{symbol}:{doc_type} ({start_date} to {end_date})"
-                logger.info(f"Starting to process: {query_desc}")
+                query_desc = f"{symbol}:{doc_type} from {start_date} to {end_date} (row {row_index}, company {company_index}/{total_companies})"
+                
+                logger.info(f"======== STARTED PROCESSING: {query_desc} ========")
+                processed_count += 1
                 
                 existing_company = crud.get_company_by_symbol(db=db, symbol=symbol)
                 if existing_company:
-                    logger.info(f"Company {symbol} already exists, will add filings if they don't exist")
+                    logger.info(f"Company {symbol} already exists in database, will add any new filings")
+                else:
+                    logger.info(f"Company {symbol} is new and will be created")
                 
                 # Process this company immediately
                 try:
@@ -203,33 +207,48 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                         limit=50  # Reasonable limit to avoid overwhelming the system
                     )
                     
-                    if company_data['companies'] and company_data['filings']:
-                        logger.info(f"Processing {symbol} with {len(company_data['filings'])} {doc_type} filings from {start_date} to {end_date}")
+                    if company_data.get('companies') and company_data.get('filings'):
+                        company_count = len(company_data['companies'])
+                        filing_count = len(company_data['filings'])
+                        logger.info(f"Found data for {symbol}: {company_count} companies, {filing_count} {doc_type} filings")
                         
                         # Process this specific company's data
                         try:
+                            # Process just this company's data
+                            logger.info(f"Processing {symbol} data with {filing_count} filings")
                             result = process_company_data(db, company_data)
-                            logger.info(f"Processed {symbol} successfully: {result}")
-                            processed_count += 1
+                            logger.info(f"SUCCESSFULLY processed {symbol}: {result}")
+                            success_count += 1
                         except Exception as e:
-                            logger.error(f"Error processing {symbol}: {str(e)}", exc_info=True)
+                            error_count += 1
+                            logger.error(f"ERROR processing {symbol}: {str(e)}", exc_info=True)
                     else:
                         logger.warning(f"No data found for {query_desc}")
+                        if not company_data.get('companies'):
+                            logger.warning(f"No company data returned for {symbol}")
+                        if not company_data.get('filings'):
+                            logger.warning(f"No filings data returned for {symbol}")
                 except Exception as e:
-                    logger.error(f"Error fetching data for {query_desc}: {str(e)}")
+                    error_count += 1
+                    logger.error(f"ERROR fetching data for {query_desc}: {str(e)}", exc_info=True)
             
             except Exception as e:
-                logger.error(f"Error processing company {company.get('symbol', 'unknown')}: {str(e)}", exc_info=True)
+                error_count += 1
+                logger.error(f"ERROR processing company {company.get('symbol', 'unknown')}: {str(e)}", exc_info=True)
             finally:
                 # Close the database session for this company before moving to the next one
                 db.close()
                 
+                # Log completion
+                logger.info(f"======== FINISHED PROCESSING: {query_desc} ========")
+                
                 # Give some time between processing companies to avoid rate limiting
-                # or potential resource conflicts
-                import time
-                time.sleep(1)
+                # or potential resource conflicts - but only if we have more to process
+                if company_index < total_companies:
+                    logger.info(f"Sleeping for 2 seconds before processing next company ({company_index}/{total_companies} completed)")
+                    time.sleep(2)
         
-        logger.info(f"Completed processing {processed_count} out of {len(companies_to_import)} companies")
+        logger.info(f"IMPORT SUMMARY: {processed_count} companies processed, {success_count} succeeded, {error_count} errors")
                 
     
     # Start processing in background
@@ -239,18 +258,18 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
     
     return {
         "status": "processing",
-        "message": f"Importing {len(companies_to_import)} queries from CSV (processing in background)",
-        "companies": [f"{company['symbol']} ({company['doc_type']})" for company in companies_to_import]
+        "message": f"Importing {len(companies_to_import)} queries from CSV (processing in background). Check logs for progress.",
+        "companies": [f"{c['symbol']} ({c['doc_type']} from {c['start_date']} to {c['end_date']})" for c in companies_to_import]
     }
 
 @router.get("/companies/csv-template")
 async def get_csv_template():
     """Return a CSV template for company import"""
-    # Basic template content with the new format
-    csv_content = "ticker,doc_type,start_date,end_date\nAAPL,10-K,2020-01-01,2025-12-31\nMSFT,10-Q,2022-01-01,2022-12-31\nGOOGL,8-K,2023-01-01,2023-12-31"
+    # Basic template content with the new format - with more diverse examples
+    csv_content = "ticker,doc_type,start_date,end_date\nAAPL,10-K,2020-01-01,2022-12-31\nMSFT,10-Q,2022-01-01,2022-12-31\nGOOGL,8-K,2023-01-01,2023-12-31\nJPM,10-K,2019-01-01,2021-12-31\nGS,10-K,2015-01-01,2016-12-31"
     
     return {
         "content": csv_content,
         "filename": "companies_to_import.csv",
-        "instructions": "Place this file in the project root directory. CSV should have four columns:\n1. ticker: Company ticker symbol (e.g., AAPL)\n2. doc_type: SEC filing type (e.g., 10-K, 10-Q, 8-K)\n3. start_date: Start date in ISO format (YYYY-MM-DD)\n4. end_date: End date in ISO format (YYYY-MM-DD)"
+        "instructions": "Place this file in the project root directory. CSV should have four columns:\n1. ticker: Company ticker symbol (e.g., AAPL)\n2. doc_type: SEC filing type (e.g., 10-K, 10-Q, 8-K)\n3. start_date: Start date in ISO format (YYYY-MM-DD)\n4. end_date: End date in ISO format (YYYY-MM-DD)\n\nNOTE: Without an SEC API key, only 10-K filings can be imported. Other document types require an SEC API key."
     }

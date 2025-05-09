@@ -19,6 +19,7 @@ SEC_BASE_URL = "https://data.sec.gov/submissions"
 SEC_API_URL = "https://api.sec-api.io"
 
 # Demo mode companies - top 10 by market cap (example)
+# This is only used for the demo mode and should not be used for lookups
 DEMO_COMPANIES = [
     {"symbol": "AAPL", "name": "Apple Inc.", "cik": "0000320193"},
     {"symbol": "MSFT", "name": "Microsoft Corporation", "cik": "0000789019"},
@@ -127,10 +128,16 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
                 logger.info(f"Extracted date range: {start_date} to {end_date}")
 
         # Only proceed if we could extract a ticker
-        if ticker and doc_type == "10-K":
-            logger.info(f"Using legacy method to fetch 10-K filings for {ticker} with date range {start_date} to {end_date}")
-            # Look up the company's CIK
-            cik = lookup_company_cik(ticker)
+        # NOTE: Remove the constraint that only works with 10-K
+        if ticker and doc_type:
+            logger.info(f"Using legacy method to fetch {doc_type} filings for {ticker} with date range {start_date} to {end_date}")
+            
+            # If it's not a 10-K and we don't have an API key, warn the user
+            if doc_type != "10-K":
+                logger.warning(f"Legacy method only supports 10-K filings. {doc_type} filings require the SEC API key.")
+                
+            # Look up the company's CIK (important: don't use the cached list, always query SEC)
+            cik = lookup_company_cik_from_sec(ticker)
             if cik:
                 # Get company information
                 company = {
@@ -145,40 +152,45 @@ def fetch_filings_by_query(query_params: Dict[str, Any]) -> List[Dict[str, Any]]
                     if submissions and 'name' in submissions:
                         company['name'] = submissions['name']
                     
-                    # Extract 10-K filings using legacy method
-                    filings = extract_10k_filings(submissions, limit=limit)
-                    
-                    # Filter by date range if provided
-                    if start_date and end_date:
-                        start_dt = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
-                        end_dt = datetime.datetime.strptime(end_date, '%Y-%m-%d').date()
+                    # Only extract 10-K filings - legacy method limitation
+                    # For other document types, we'll return an empty list
+                    if doc_type == "10-K":
+                        filings = extract_10k_filings(submissions, limit=limit)
                         
-                        filtered_filings = []
+                        # Filter by date range if provided
+                        if start_date and end_date:
+                            start_dt = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
+                            end_dt = datetime.datetime.strptime(end_date, '%Y-%m-%d').date()
+                            
+                            filtered_filings = []
+                            for filing in filings:
+                                filing_date = filing['filing_date'].date()
+                                if start_dt <= filing_date <= end_dt:
+                                    filtered_filings.append(filing)
+                            
+                            logger.info(f"Filtered filings by date range {start_date} to {end_date}: "
+                                      f"{len(filings)} -> {len(filtered_filings)}")
+                            filings = filtered_filings
+                        
+                        # Format the filings to match the API response format
+                        formatted_filings = []
                         for filing in filings:
-                            filing_date = filing['filing_date'].date()
-                            if start_dt <= filing_date <= end_dt:
-                                filtered_filings.append(filing)
+                            formatted_filings.append({
+                                'accessionNo': filing['accession_number'],
+                                'formType': filing['filing_type'],
+                                'filedAt': filing['filing_date'].strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                                'linkToFilingDetails': filing['filing_url'],
+                                'ticker': ticker,
+                                'companyName': company['name'],
+                                'periodOfReport': filing['filing_date'].strftime('%Y-%m-%d'),
+                                'cik': cik
+                            })
                         
-                        logger.info(f"Filtered filings by date range {start_date} to {end_date}: "
-                                  f"{len(filings)} -> {len(filtered_filings)}")
-                        filings = filtered_filings
-                    
-                    # Format the filings to match the API response format
-                    formatted_filings = []
-                    for filing in filings:
-                        formatted_filings.append({
-                            'accessionNo': filing['accession_number'],
-                            'formType': filing['filing_type'],
-                            'filedAt': filing['filing_date'].strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-                            'linkToFilingDetails': filing['filing_url'],
-                            'ticker': ticker,
-                            'companyName': company['name'],
-                            'periodOfReport': filing['filing_date'].strftime('%Y-%m-%d'),
-                            'cik': cik
-                        })
-                    
-                    logger.info(f"Found {len(formatted_filings)} filings using legacy method")
-                    return formatted_filings
+                        logger.info(f"Found {len(formatted_filings)} filings using legacy method")
+                        return formatted_filings
+                    else:
+                        logger.warning(f"Legacy method cannot fetch {doc_type} filings - SEC API key required")
+                        return []
                 except Exception as e:
                     logger.error(f"Error using legacy method: {str(e)}")
 
@@ -270,8 +282,8 @@ def fetch_filing_document(filing_url: str) -> Optional[str]:
         return None
 
 
-def lookup_company_cik(symbol: str) -> Optional[str]:
-    """Look up a company's CIK number by its ticker symbol.
+def lookup_company_cik_from_sec(symbol: str) -> Optional[str]:
+    """Look up a company's CIK number directly from SEC, without using the demo list.
     
     Args:
         symbol: Company stock symbol (e.g., "AAPL")
@@ -279,12 +291,6 @@ def lookup_company_cik(symbol: str) -> Optional[str]:
     Returns:
         CIK number as a string, or None if not found
     """
-    # First check our demo list for a quick match
-    demo_company = next((c for c in DEMO_COMPANIES if c['symbol'] == symbol), None)
-    if demo_company:
-        return demo_company['cik']
-    
-    # If not in demo list, try to look it up from SEC
     try:
         # Use the SEC's ticker-to-CIK mapping endpoint
         url = "https://www.sec.gov/files/company_tickers.json"
@@ -316,6 +322,25 @@ def lookup_company_cik(symbol: str) -> Optional[str]:
         return None
 
 
+def lookup_company_cik(symbol: str) -> Optional[str]:
+    """Look up a company's CIK number by its ticker symbol.
+    
+    Args:
+        symbol: Company stock symbol (e.g., "AAPL")
+        
+    Returns:
+        CIK number as a string, or None if not found
+    """
+    # First check our demo list for a quick match - FOR DEMO MODE ONLY 
+    # This will be used when explicitly using the demo mode functions
+    demo_company = next((c for c in DEMO_COMPANIES if c['symbol'] == symbol), None)
+    if demo_company:
+        return demo_company['cik']
+    
+    # For normal operation (including CSV imports), always look up from SEC
+    return lookup_company_cik_from_sec(symbol)
+
+
 def fetch_filings_by_query_params(ticker: str, doc_type: str, start_date: str, end_date: str, limit: int = 50) -> Dict[str, List]:
     """Fetch company and filing information based on SEC API query.
     
@@ -337,8 +362,8 @@ def fetch_filings_by_query_params(ticker: str, doc_type: str, start_date: str, e
     logger.info(f"Processing company with symbol: {ticker} for {doc_type} documents from {start_date} to {end_date}")
     
     try:
-        # Look up the company's CIK
-        cik = lookup_company_cik(ticker)
+        # Look up the company's CIK - use direct SEC lookup to avoid caching effects
+        cik = lookup_company_cik_from_sec(ticker)
         
         if cik:
             company = {
