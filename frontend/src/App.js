@@ -5,6 +5,49 @@ import ChatMessage from './components/ChatMessage';
 import CompanySelect from './components/CompanySelect';
 import CompanyManagement from './components/CompanyManagement';
 
+// Create custom axios instance with retry logic
+const apiClient = axios.create();
+
+// Make apiClient available globally for other components
+window.apiClient = apiClient;
+
+// Add a request interceptor for logging
+apiClient.interceptors.request.use(
+  config => {
+    console.log(`API Request: ${config.method.toUpperCase()} ${config.url}`);
+    return config;
+  },
+  error => {
+    console.error('API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Add retry logic for failed requests
+apiClient.interceptors.response.use(
+  response => response,
+  async error => {
+    const { config } = error;
+
+    // Only retry GET requests to avoid side effects
+    if (!config || !config.method || config.method.toLowerCase() !== 'get' || config._retryCount >= 2) {
+      return Promise.reject(error);
+    }
+
+    // Set retry count
+    config._retryCount = config._retryCount || 0;
+    config._retryCount++;
+
+    console.log(`Retrying request ${config.url} (attempt ${config._retryCount}/2)`);
+
+    // Wait before retrying - increase delay for subsequent retries
+    const delay = config._retryCount * 1000; // 1s for first retry, 2s for second
+    await new Promise(resolve => setTimeout(resolve, delay));
+
+    return apiClient(config);
+  }
+);
+
 function App() {
   const [activeTab, setActiveTab] = useState('chat');
   const [input, setInput] = useState('');
@@ -24,24 +67,28 @@ function App() {
     const checkApiStatus = async () => {
       try {
         setApiError(null);
-        const response = await axios.get(`${API_URL}/health`, { timeout: 5000 });
+        console.log('Checking API health status...');
+        const response = await apiClient.get(`${API_URL}/health`, { timeout: 5000 });
         if (response.data.status === 'ok') {
           setIsConnected(true);
-          console.log('API connected successfully');
+          console.log('✅ API connected successfully');
           console.log('Database status:', response.data.database);
         } else {
-          console.error('API health check returned non-ok status:', response.data);
+          console.error('❌ API health check returned non-ok status:', response.data);
           setApiError(`API Error: ${JSON.stringify(response.data)}`);
           setIsConnected(false);
         }
       } catch (error) {
-        console.error('API health check error:', error);
+        console.error('❌ API health check error:', error);
         if (error.response) {
           // Server responded with an error
           setApiError(`API Error (${error.response.status}): ${error.response.data.detail || JSON.stringify(error.response.data)}`);
         } else if (error.request) {
           // No response received
-          setApiError('Connection Error: Unable to reach the API server. Please check if the backend is running.');
+          setApiError('Connection Error: Unable to reach the API server. Please check if the backend is running.' +
+                      (API_URL.includes('localhost') ?
+                       '\n\nPossible solution: If you\'re using Docker, try changing REACT_APP_API_URL in docker-compose.yml to "http://backend:8000".' :
+                       ''));
         } else {
           // Something else went wrong
           setApiError(`Request Error: ${error.message}`);
@@ -49,10 +96,12 @@ function App() {
         setIsConnected(false);
       }
     };
-    
+
+    console.log(`API URL configured as: ${API_URL}`);
     checkApiStatus();
-    // Check API health every 30 seconds
-    const interval = setInterval(checkApiStatus, 30000);
+
+    // Check API health every 20 seconds
+    const interval = setInterval(checkApiStatus, 20000);
     return () => clearInterval(interval);
   }, [API_URL]);
 
@@ -63,7 +112,7 @@ function App() {
       
       try {
         setApiError(null);
-        const response = await axios.get(`${API_URL}/api/v1/companies`, { timeout: 10000 });
+        const response = await apiClient.get(`${API_URL}/api/v1/companies`, { timeout: 10000 });
         
         if (response.data && Array.isArray(response.data)) {
           console.log(`Fetched ${response.data.length} companies successfully`);
@@ -150,8 +199,8 @@ function App() {
       console.log('Sending chat query:', query);
       
       // Send to API with timeout
-      const response = await axios.post(
-        `${API_URL}/api/v1/chat`, 
+      const response = await apiClient.post(
+        `${API_URL}/api/v1/chat`,
         query,
         { timeout: 30000 } // 30 second timeout for chat requests
       );

@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import '../App.css';
 
+// Import our custom apiClient or create a new one if not available
+const apiClient = window.apiClient || axios;
+
 const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -30,7 +33,7 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
     setError(null);
     
     try {
-      const response = await axios.get(`${apiUrl}/api/v1/companies`);
+      const response = await apiClient.get(`${apiUrl}/api/v1/companies`);
       setCompanies(response.data);
       
       // Notify parent component that companies were updated
@@ -53,7 +56,7 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
     setError(null);
     
     try {
-      const response = await axios.get(`${apiUrl}/api/v1/companies/${symbol}/filings`);
+      const response = await apiClient.get(`${apiUrl}/api/v1/companies/${symbol}/filings`);
       setFilings(response.data);
     } catch (error) {
       console.error(`Error fetching filings for ${symbol}:`, error);
@@ -78,7 +81,7 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
     setError(null);
     
     try {
-      const response = await axios.delete(`${apiUrl}/api/v1/companies/${symbol}`);
+      const response = await apiClient.delete(`${apiUrl}/api/v1/companies/${symbol}`);
       console.log('Delete company response:', response.data);
       
       // Refresh companies list
@@ -105,7 +108,7 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
 
     try {
       // Call the API to process the CSV file in the project
-      const response = await axios.post(`${apiUrl}/api/v1/companies/import-from-csv`);
+      const response = await apiClient.post(`${apiUrl}/api/v1/companies/import-from-csv`);
 
       console.log('CSV import response:', response.data);
 
@@ -165,7 +168,7 @@ Processing in background. Please check back in a few minutes.`;
   
   const handleDownloadTemplate = async () => {
     try {
-      const response = await axios.get(`${apiUrl}/api/v1/companies/csv-template`);
+      const response = await apiClient.get(`${apiUrl}/api/v1/companies/csv-template`);
       
       // Create a blob from the CSV content
       const blob = new Blob([response.data.content], { type: 'text/csv' });
