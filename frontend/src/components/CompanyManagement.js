@@ -1,576 +1,513 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
-import '../App.css';
+import React, { useState, useEffect } from 'react';
+import { getCompanies, getCompaniesStatus } from '../utils/api';
+import { useAppContext } from '../context/AppContext';
 
-// Import our custom apiClient or create a new one if not available
-const apiClient = window.apiClient || axios;
+const CompanyManagement = () => {
+  // Context values
+  const { loading: contextLoading, error: contextError } = useAppContext();
 
-const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
+  // Local state
   const [companies, setCompanies] = useState([]);
+  const [companiesStatus, setCompaniesStatus] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedCompany, setSelectedCompany] = useState(null);
-  const [filings, setFilings] = useState([]);
-  const [isFirstVisit, setIsFirstVisit] = useState(true);
-  const [csvImporting, setCsvImporting] = useState(false);
-  const [importStatus, setImportStatus] = useState(null);
-  const [importStatusTimer, setImportStatusTimer] = useState(null);
-  const [csvImportResults, setCsvImportResults] = useState(null);
+  const [activeTab, setActiveTab] = useState('database'); // 'database' or 'status'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: 'ticker', direction: 'asc' });
 
-  // Determine the active API URL (fallback or primary)
-  const getEffectiveApiUrl = () => {
-    return window.workingApiUrl || apiUrl;
-  };
-
-  // Fetch companies on component mount
+  // Fetch data on component mount
   useEffect(() => {
     fetchCompanies();
-    
-    // Check if this is the first visit
-    const hasVisited = localStorage.getItem('hasVisitedCompanyManagement');
-    if (!hasVisited) {
-      setIsFirstVisit(true);
-      localStorage.setItem('hasVisitedCompanyManagement', 'true');
-    } else {
-      setIsFirstVisit(false);
-    }
-
-    // Start checking import status
-    checkImportStatus();
-
-    // Cleanup on component unmount
-    return () => {
-      if (importStatusTimer) {
-        clearInterval(importStatusTimer);
-      }
-    };
+    fetchCompaniesStatus();
   }, []);
 
+  // Fetch companies
   const fetchCompanies = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // Use the working URL if one was found, otherwise fall back to the default
-      const effectiveApiUrl = getEffectiveApiUrl();
-      console.log(`Fetching companies using API URL: ${effectiveApiUrl}`);
-      
-      const response = await apiClient.get(`${effectiveApiUrl}/api/v1/companies`);
-      setCompanies(response.data);
-      
-      // Notify parent component that companies were updated
-      if (onCompaniesUpdated) {
-        onCompaniesUpdated(response.data);
-      }
-      
-    } catch (error) {
-      console.error('Error fetching companies:', error);
-      setError('Error fetching companies. Please try again later.');
+      const data = await getCompanies();
+      setCompanies(data);
+    } catch (err) {
+      console.error('Error fetching companies:', err);
+      setError('Failed to load companies');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchFilings = async (symbol) => {
-    if (!symbol) return;
-    
+  // Fetch companies status
+  const fetchCompaniesStatus = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // Use the working URL if one was found, otherwise fall back to the default
-      const effectiveApiUrl = getEffectiveApiUrl();
-      console.log(`Fetching filings for ${symbol} using API URL: ${effectiveApiUrl}`);
-      
-      const response = await apiClient.get(`${effectiveApiUrl}/api/v1/companies/${symbol}/filings`);
-      setFilings(response.data);
-    } catch (error) {
-      console.error(`Error fetching filings for ${symbol}:`, error);
-      setError(`Error fetching filings for ${symbol}`);
-      setFilings([]);
+      const data = await getCompaniesStatus();
+      setCompaniesStatus(data);
+    } catch (err) {
+      console.error('Error fetching companies status:', err);
+      setError('Failed to load companies status');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCompanySelect = (company) => {
-    setSelectedCompany(company);
-    fetchFilings(company.symbol);
+  // Request refresh of data
+  const refreshData = () => {
+    fetchCompanies();
+    fetchCompaniesStatus();
   };
 
-  const handleDeleteCompany = async (symbol) => {
-    if (!window.confirm(`Are you sure you want to delete ${symbol} and all its data?`)) {
-      return;
+  // Find companies that are in the CSV but not in the database
+  const findMissingCompanies = () => {
+    if (!companies.length || !companiesStatus.length) return [];
+
+    const dbCompanies = new Set(companies.map(company => company.ticker));
+    return companiesStatus.filter(company => !dbCompanies.has(company.ticker));
+  };
+
+  const missingCompanies = findMissingCompanies();
+
+  // Sort companies
+  const sortedCompanies = [...companies].sort((a, b) => {
+    if (a[sortConfig.key] < b[sortConfig.key]) {
+      return sortConfig.direction === 'asc' ? -1 : 1;
     }
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // Use the working URL if one was found, otherwise fall back to the default
-      const effectiveApiUrl = getEffectiveApiUrl();
-      console.log(`Deleting company ${symbol} using API URL: ${effectiveApiUrl}`);
-      
-      const response = await apiClient.delete(`${effectiveApiUrl}/api/v1/companies/${symbol}`);
-      console.log('Delete company response:', response.data);
-      
-      // Refresh companies list
-      fetchCompanies();
-      
-      // Clear selected company if it's the one deleted
-      if (selectedCompany && selectedCompany.symbol === symbol) {
-        setSelectedCompany(null);
-        setFilings([]);
-      }
-      
-    } catch (error) {
-      console.error(`Error deleting company ${symbol}:`, error);
-      setError(`Error deleting company ${symbol}`);
-    } finally {
-      setLoading(false);
+    if (a[sortConfig.key] > b[sortConfig.key]) {
+      return sortConfig.direction === 'asc' ? 1 : -1;
     }
-  };
-  
-  const handleImportFromCsv = async () => {
-    setLoading(true);
-    setError(null);
-    setCsvImporting(true);
-    setCsvImportResults(null);
+    return 0;
+  });
 
-    try {
-      // Use the working URL if one was found, otherwise fall back to the default
-      const effectiveApiUrl = getEffectiveApiUrl();
-      console.log(`Importing CSV using API URL: ${effectiveApiUrl}`);
-      
-      // Call the API to process the CSV file in the project
-      const response = await apiClient.post(`${effectiveApiUrl}/api/v1/companies/import-from-csv`);
-      console.log('CSV import response:', response.data);
+  // Filter companies by search term
+  const filteredCompanies = sortedCompanies.filter(company => 
+    company.ticker.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-      if (response.data.status === 'processing') {
-        // Start polling the import status
-        startStatusPolling();
-        
-        // Show importation started success message
-        const companies = response.data.companies || [];
-        setCsvImportResults({
-          status: 'processing',
-          message: `Started importing ${companies.length} companies. Processing in background.`,
-          companies: companies
-        });
-      }
-
-      // Refresh companies list after a short delay
-      setTimeout(fetchCompanies, 3000);
-
-    } catch (error) {
-      console.error('Error importing from CSV:', error);
-      handleCsvImportError(error);
-    } finally {
-      setCsvImporting(false);
-      setLoading(false);
-    }
-  };
-
-  const handleCsvImportError = (error) => {
-    // Set error state for display in UI
-    setError(`Error importing from CSV: ${error.response?.data?.detail || error.message}`);
-
-    // Create detailed error information for display
-    let errorDetails = {
-      status: 'error',
-      message: 'Error importing from CSV'
-    };
-
-    if (error.response) {
-      if (error.response.status === 404) {
-        // CSV file not found error
-        errorDetails.message = error.response.data.detail ||
-                    "The companies_to_import.csv file wasn't found. Please download the template, edit it with your companies, and place it in the project root directory.";
-        errorDetails.type = 'file_not_found';
-      } else if (error.response.status === 500) {
-        // Server error
-        errorDetails.message = "There was a server error processing the CSV file.\n\n" +
-                    "Server message: " + (error.response.data.detail || error.response.statusText);
-        errorDetails.type = 'server_error';
-      } else if (error.response.status === 400) {
-        // Bad request (likely invalid CSV format)
-        errorDetails.message = error.response.data.detail || "Invalid CSV format. Please check the template and try again.";
-        errorDetails.type = 'invalid_format';
-      } else {
-        // Other API error
-        errorDetails.message = error.response.data.detail || error.response.statusText;
-        errorDetails.type = 'api_error';
-      }
-    } else if (error.request) {
-      // Network error
-      errorDetails.message = "Could not connect to the server. Please check that the backend is running.\n\nIf you're using Docker, make sure all containers are up and running with 'docker-compose ps'.";
-      errorDetails.type = 'network_error';
-    } else {
-      // Other error
-      errorDetails.message = error.message;
-      errorDetails.type = 'unknown_error';
-    }
-
-    setCsvImportResults(errorDetails);
-  };
-  
-  const handleDownloadTemplate = async () => {
-    try {
-      // Use the working URL if one was found, otherwise fall back to the default
-      const effectiveApiUrl = getEffectiveApiUrl();
-      console.log(`Downloading template using API URL: ${effectiveApiUrl}`);
-      
-      const response = await apiClient.get(`${effectiveApiUrl}/api/v1/companies/csv-template`);
-      
-      // Create a blob from the CSV content
-      const blob = new Blob([response.data.content], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      
-      // Create a temporary link element and trigger download
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = response.data.filename;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Clean up
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      // Show instructions
-      alert(response.data.instructions);
-      
-    } catch (error) {
-      console.error('Error downloading template:', error);
-      setError('Error downloading CSV template. Please try again later.');
-    }
-  };
-
-  const startStatusPolling = () => {
-    // Clear existing timer if any
-    if (importStatusTimer) {
-      clearInterval(importStatusTimer);
-    }
-
-    // Set up a new interval to check import status every 5 seconds
-    const timer = setInterval(checkImportStatus, 5000);
-    setImportStatusTimer(timer);
-  };
-
-  const checkImportStatus = async () => {
-    try {
-      const effectiveApiUrl = getEffectiveApiUrl();
-      const response = await apiClient.get(`${effectiveApiUrl}/api/v1/companies/import-status`);
-      
-      if (response.data) {
-        setImportStatus(response.data);
-      }
-    } catch (error) {
-      console.warn("Error checking import status:", error);
-      // Don't set an error - this is a background check
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
-  };
-
-  const renderImportResults = () => {
-    if (!csvImportResults) return null;
-
-    if (csvImportResults.status === 'processing') {
-      return (
-        <div className="csv-import-results success">
-          <h4><span className="status-icon">⏳</span> Import Started</h4>
-          <p>{csvImportResults.message}</p>
-          {csvImportResults.companies && csvImportResults.companies.length > 0 && (
-            <div className="importing-companies">
-              <p>Companies being imported:</p>
-              <ul className="companies-list">
-                {csvImportResults.companies.slice(0, 5).map((company, index) => (
-                  <li key={index}>{company}</li>
-                ))}
-                {csvImportResults.companies.length > 5 && (
-                  <li>...and {csvImportResults.companies.length - 5} more</li>
-                )}
-              </ul>
-            </div>
-          )}
-        </div>
-      );
-    } else if (csvImportResults.status === 'error') {
-      return (
-        <div className="csv-import-results error">
-          <h4><span className="status-icon">❌</span> Import Failed</h4>
-          <p>{csvImportResults.message}</p>
-          <div className="error-troubleshooting">
-            <h5>Troubleshooting:</h5>
-            {csvImportResults.type === 'file_not_found' && (
-              <ul>
-                <li>Download the CSV template and save it as <code>companies_to_import.csv</code></li>
-                <li>Place the CSV file in the project root directory (not inside backend or frontend folders)</li>
-                <li>Ensure the file has the correct name: <code>companies_to_import.csv</code></li>
-              </ul>
-            )}
-            {csvImportResults.type === 'invalid_format' && (
-              <ul>
-                <li>Make sure the CSV has the required headers: ticker and doc_type</li>
-                <li>Check that date formats are YYYY-MM-DD</li>
-                <li>Make sure there are no empty rows or special characters</li>
-              </ul>
-            )}
-            {csvImportResults.type === 'network_error' && (
-              <ul>
-                <li>Check that both frontend and backend containers are running</li>
-                <li>Run <code>docker-compose ps</code> to verify container status</li>
-                <li>Check container logs for any errors</li>
-              </ul>
-            )}
-            {(csvImportResults.type === 'server_error' || csvImportResults.type === 'unknown_error') && (
-              <ul>
-                <li>Check backend logs for detailed error information</li>
-                <li>Ensure CSV format matches the template</li>
-                <li>Try with a smaller number of companies initially</li>
-              </ul>
-            )}
-          </div>
-        </div>
-      );
-    }
-    
-    return null;
-  };
-
-  const renderImportStatus = () => {
-    if (!importStatus) return null;
-
-    return (
-      <div className="import-status">
-        <h5>System Status:</h5>
-        <div className="status-items">
-          <div className="status-item">
-            <span className="status-label">Companies:</span>
-            <span className="status-value">{importStatus.companies}</span>
-          </div>
-          <div className="status-item">
-            <span className="status-label">Filings:</span>
-            <span className="status-value">{importStatus.filings.processing_progress}</span>
-            <span className="status-percent">{importStatus.filings.total > 0 ? 
-              `(${Math.round((importStatus.filings.processed / importStatus.filings.total) * 100)}%)` : 
-              '(0%)'}</span>
-          </div>
-          <div className="status-item">
-            <span className="status-label">Embeddings:</span>
-            <span className="status-value">{importStatus.chunks.embedding_progress}</span>
-            <span className="status-percent">{importStatus.chunks.total > 0 ? 
-              `(${Math.round((importStatus.chunks.embedded / importStatus.chunks.total) * 100)}%)` : 
-              '(0%)'}</span>
-          </div>
-        </div>
-      </div>
-    );
+  // Handle sort click
+  const handleSort = (key) => {
+    setSortConfig(prevConfig => ({
+      key,
+      direction: prevConfig.key === key && prevConfig.direction === 'asc' ? 'desc' : 'asc'
+    }));
   };
 
   return (
-    <div className="company-management">
-      <h2>Company Management</h2>
-      
-      {/* Onboarding prompt for first-time users */}
-      {isFirstVisit && companies.length === 0 && (
-        <div className="onboarding-prompt">
-          <h3>Welcome to AInalyst!</h3>
-          <p>To get started, you need to add companies to your database.</p>
-          <p>Use the CSV import feature to add companies and filings:</p>
-          <ol>
-            <li>Download the CSV template</li>
-            <li>Edit it to include the companies you want to analyze</li>
-            <li>Save the file as <code>companies_to_import.csv</code> in the project root directory</li>
-            <li>Import the file using the button below</li>
-          </ol>
-          <button 
-            className="button primary" 
-            onClick={handleDownloadTemplate}
-            disabled={loading}
-          >
-            Download CSV Template
+    <div className="db-explorer">
+      <div className="db-header">
+        <h2>Database Explorer</h2>
+        <div className="db-actions">
+          <button className="refresh-button" onClick={refreshData} disabled={loading}>
+            {loading ? 'Refreshing...' : 'Refresh Data'}
           </button>
+          <div className="search-container">
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search by ticker..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
         </div>
-      )}
+      </div>
+
+      <div className="tabs">
+        <button
+          className={`tab-button ${activeTab === 'database' ? 'active' : ''}`}
+          onClick={() => setActiveTab('database')}
+        >
+          Database ({companies.length})
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'status' ? 'active' : ''}`}
+          onClick={() => setActiveTab('status')}
+        >
+          Ingestion Status
+        </button>
+      </div>
+
+      {loading && <div className="loading">Loading data...</div>}
+      {error && <div className="error">{error}</div>}
       
-      <div className="management-container">
-        <div className="companies-panel">
-          <h3>Companies in Database</h3>
-          
-          {loading && !companies.length && <div className="loading">Loading...</div>}
-          {error && <div className="error">{error}</div>}
-          
-          {!loading && !error && companies.length === 0 && (
-            <div className="empty-state">
-              <p>No companies found in the database.</p>
-              <p>Add companies using the CSV import feature.</p>
-              <button 
-                className="button secondary" 
-                onClick={handleDownloadTemplate}
-                disabled={loading}
-              >
-                Download CSV Template
-              </button>
-            </div>
-          )}
-          
-          {companies.length > 0 && (
-            <div className="company-list">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Symbol</th>
-                    <th>Name</th>
-                    <th>Filings</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {companies.map(company => (
-                    <tr 
-                      key={company.symbol}
-                      className={selectedCompany && selectedCompany.symbol === company.symbol ? 'selected' : ''}
-                      onClick={() => handleCompanySelect(company)}
-                    >
-                      <td>{company.symbol}</td>
-                      <td>{company.name}</td>
-                      <td>{company.filings_count || 0}</td>
-                      <td>
-                        <button 
-                          className="button-small danger"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteCompany(company.symbol);
-                          }}
-                          disabled={loading}
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          
-          <div className="csv-import-section">
-            <h4>Import Companies from CSV</h4>
-            
-            {/* Show import results if available */}
-            {renderImportResults()}
-            
-            {/* Show import status */}
-            {renderImportStatus()}
-            
-            <div className="csv-info">
-              <div className="csv-instructions">
-                <h5>How to Import Companies:</h5>
-                <ol>
-                  <li>Download the CSV template using the button below</li>
-                  <li>Edit the CSV to add the companies and filings you need</li>
-                  <li>Place the edited file in the project root directory as <code>companies_to_import.csv</code></li>
-                  <li>Click the "Import from CSV" button to load the companies</li>
-                </ol>
-
-                <div className="csv-format-info">
-                  <h5>CSV Format:</h5>
-                  <p><strong>Required Columns:</strong></p>
-                  <ul>
-                    <li><code>ticker</code> - Company symbol (e.g., AAPL)</li>
-                    <li><code>doc_type</code> - Filing type (e.g., 10-K, 10-Q, 8-K)</li>
-                  </ul>
-                  <p><strong>Optional Columns:</strong></p>
-                  <ul>
-                    <li><code>cik</code> - SEC Central Index Key (speeds up import)</li>
-                    <li><code>start_date</code> - Start date in YYYY-MM-DD format</li>
-                    <li><code>end_date</code> - End date in YYYY-MM-DD format</li>
-                  </ul>
-                </div>
+      {activeTab === 'database' && (
+        <>
+          <div className="status-section">
+            <h3>Database Status</h3>
+            <div className="status-summary">
+              <div className="status-item">
+                <div className="status-label">Companies in Database:</div>
+                <div className="status-value">{companies.length}</div>
               </div>
-
-              <div className="csv-actions">
-                <button
-                  onClick={handleDownloadTemplate}
-                  className="button secondary"
-                  disabled={loading}
-                >
-                  1. Download Template
-                </button>
-                <button
-                  onClick={handleImportFromCsv}
-                  className="button primary"
-                  disabled={loading || csvImporting}
-                >
-                  {csvImporting ? 'Importing...' : '2. Import from CSV'}
-                </button>
+              <div className="status-item">
+                <div className="status-label">Companies in CSV:</div>
+                <div className="status-value">{companiesStatus.length}</div>
+              </div>
+              <div className="status-item">
+                <div className="status-label">Missing Companies:</div>
+                <div className="status-value">{missingCompanies.length}</div>
               </div>
             </div>
           </div>
-        </div>
-        
-        <div className="filings-panel">
-          <h3>Company Filings</h3>
-          
-          {!selectedCompany && (
-            <div className="empty-state">
-              <p>Select a company to view its filings</p>
+
+          {missingCompanies.length > 0 && (
+            <div className="missing-companies">
+              <h3>Companies in CSV Awaiting Ingestion</h3>
+              <ul>
+                {missingCompanies.map(company => (
+                  <li key={company.ticker}>
+                    {company.ticker} - {company.company_name} ({company.start_year} to {company.end_year})
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
-          
-          {selectedCompany && (
-            <>
-              <h4>{selectedCompany.name} ({selectedCompany.symbol})</h4>
-              
-              {loading && <div className="loading">Loading filings...</div>}
-              {error && <div className="error">{error}</div>}
-              
-              {!loading && !error && filings.length === 0 && (
-                <div className="empty-state">
-                  <p>No filings found for {selectedCompany.symbol}</p>
-                </div>
-              )}
-              
-              {filings.length > 0 && (
-                <div className="filings-list">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Type</th>
-                        <th>Date</th>
-                        <th>Year</th>
-                        <th>Status</th>
-                        <th>Chunks</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filings.map(filing => (
-                        <tr key={filing.id}>
-                          <td>{filing.filing_type}</td>
-                          <td>{formatDate(filing.filing_date)}</td>
-                          <td>{filing.fiscal_year}</td>
-                          <td>
-                            <span className={filing.processed ? 'status-processed' : 'status-pending'}>
-                              {filing.processed ? 'Processed' : 'Pending'}
-                            </span>
-                          </td>
-                          <td>{filing.chunks_count || 0}</td>
-                        </tr>
+
+          <h3>Companies in Database</h3>
+          {filteredCompanies.length > 0 ? (
+            <div className="companies-grid">
+              {filteredCompanies.map(company => (
+                <div key={company.ticker} className="company-card">
+                  <h3>{company.ticker}</h3>
+                  <div className="company-details">
+                    <div className="years-label">Available Years:</div>
+                    <div className="years-list">
+                      {company.years.map(year => (
+                        <span key={year} className="year-badge">{year}</span>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                    <div className="document-count">
+                      {company.total_documents} documents
+                    </div>
+                  </div>
                 </div>
-              )}
-            </>
+              ))}
+            </div>
+          ) : (
+            <div className="no-results">
+              {searchTerm ? 'No companies match your search.' : 'No companies in database.'}
+            </div>
           )}
-        </div>
-      </div>
+        </>
+      )}
+
+      {activeTab === 'status' && (
+        <>
+          <h3>Ingestion Status by Company</h3>
+          {companiesStatus.length > 0 ? (
+            <div className="status-table-container">
+              <table className="status-table">
+                <thead>
+                  <tr>
+                    <th onClick={() => handleSort('ticker')}>
+                      Ticker {sortConfig.key === 'ticker' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                    </th>
+                    <th>Company Name</th>
+                    <th>Years Range</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {companiesStatus.map(company => {
+                    // Calculate ingestion progress
+                    const totalYears = company.end_year - company.start_year + 1;
+                    const totalDocuments = totalYears * 2; // 10-K and 10-K/A per year
+                    
+                    let ingestedDocuments = 0;
+                    company.years.forEach(yearData => {
+                      yearData.documents.forEach(doc => {
+                        if (doc.exists) ingestedDocuments++;
+                      });
+                    });
+                    
+                    const progressPercent = Math.round((ingestedDocuments / totalDocuments) * 100);
+                    
+                    return (
+                      <tr key={company.ticker}>
+                        <td>{company.ticker}</td>
+                        <td>{company.company_name}</td>
+                        <td>{company.start_year} - {company.end_year}</td>
+                        <td>
+                          <div className="progress-container">
+                            <div 
+                              className="progress-bar" 
+                              style={{width: `${progressPercent}%`}}
+                            ></div>
+                            <span className="progress-text">{progressPercent}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="no-results">No ingestion status available.</div>
+          )}
+        </>
+      )}
+
+      <style jsx>{`
+        .db-explorer {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 20px;
+        }
+        
+        .db-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 24px;
+        }
+        
+        .db-actions {
+          display: flex;
+          gap: 16px;
+          align-items: center;
+        }
+        
+        .refresh-button {
+          padding: 8px 16px;
+          background-color: var(--primary-color);
+          color: white;
+          border: none;
+          border-radius: var(--border-radius);
+          cursor: pointer;
+        }
+        
+        .refresh-button:disabled {
+          background-color: var(--secondary-color);
+          cursor: not-allowed;
+        }
+        
+        .search-container {
+          position: relative;
+        }
+        
+        .search-input {
+          padding: 8px 12px;
+          border: 1px solid var(--border-color);
+          border-radius: var(--border-radius);
+          min-width: 200px;
+        }
+        
+        .tabs {
+          display: flex;
+          margin-bottom: 24px;
+          border-bottom: 1px solid var(--border-color);
+        }
+        
+        .tab-button {
+          padding: 12px 20px;
+          background: none;
+          border: none;
+          border-bottom: 2px solid transparent;
+          cursor: pointer;
+          font-weight: 500;
+        }
+        
+        .tab-button.active {
+          color: var(--primary-color);
+          border-bottom: 2px solid var(--primary-color);
+        }
+        
+        h2 {
+          color: var(--primary-color);
+          margin-bottom: 20px;
+        }
+        
+        h3 {
+          color: var(--text-color);
+          margin-top: 24px;
+          margin-bottom: 16px;
+        }
+        
+        .loading {
+          padding: 12px;
+          background-color: #e6f7ff;
+          border: 1px solid #91d5ff;
+          border-radius: 4px;
+          margin-bottom: 20px;
+        }
+        
+        .error {
+          padding: 12px;
+          background-color: #fff2f0;
+          border: 1px solid #ffccc7;
+          border-radius: 4px;
+          color: #f5222d;
+          margin-bottom: 20px;
+        }
+        
+        .status-section {
+          background-color: #fafafa;
+          border: 1px solid #e8e8e8;
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 24px;
+        }
+        
+        .status-summary {
+          display: flex;
+          gap: 24px;
+          flex-wrap: wrap;
+        }
+        
+        .status-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+        
+        .status-label {
+          font-size: 0.9em;
+          color: #8c8c8c;
+          margin-bottom: 4px;
+        }
+        
+        .status-value {
+          font-size: 1.5em;
+          font-weight: bold;
+          color: #1890ff;
+        }
+        
+        .missing-companies {
+          background-color: #fffbe6;
+          border: 1px solid #ffe58f;
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 24px;
+        }
+        
+        .missing-companies h3 {
+          color: #d48806;
+          margin-top: 0;
+        }
+        
+        .missing-companies ul {
+          padding-left: 20px;
+          margin: 0;
+        }
+        
+        .missing-companies li {
+          margin-bottom: 8px;
+        }
+        
+        .companies-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+          gap: 16px;
+        }
+        
+        .company-card {
+          background-color: white;
+          border: 1px solid #e8e8e8;
+          border-radius: 8px;
+          padding: 16px;
+          transition: box-shadow 0.3s;
+        }
+        
+        .company-card:hover {
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .company-card h3 {
+          margin-top: 0;
+          margin-bottom: 12px;
+          color: #1890ff;
+        }
+        
+        .years-label {
+          font-size: 0.9em;
+          color: #8c8c8c;
+          margin-bottom: 8px;
+        }
+        
+        .years-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-bottom: 12px;
+        }
+        
+        .year-badge {
+          background-color: #f0f0f0;
+          color: #595959;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 0.8em;
+        }
+        
+        .document-count {
+          font-size: 0.9em;
+          color: #8c8c8c;
+        }
+        
+        .status-table-container {
+          overflow-x: auto;
+        }
+        
+        .status-table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        
+        .status-table th {
+          background-color: #fafafa;
+          padding: 12px 16px;
+          text-align: left;
+          border-bottom: 1px solid #e8e8e8;
+          cursor: pointer;
+        }
+        
+        .status-table th:hover {
+          background-color: #f0f0f0;
+        }
+        
+        .status-table td {
+          padding: 12px 16px;
+          border-bottom: 1px solid #e8e8e8;
+        }
+        
+        .progress-container {
+          width: 100%;
+          background-color: #f0f0f0;
+          border-radius: 4px;
+          height: 20px;
+          position: relative;
+        }
+        
+        .progress-bar {
+          height: 100%;
+          background-color: #52c41a;
+          border-radius: 4px;
+        }
+        
+        .progress-text {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #595959;
+          font-size: 0.8em;
+          font-weight: 500;
+        }
+        
+        .no-results {
+          padding: 24px;
+          text-align: center;
+          color: #8c8c8c;
+          background-color: #fafafa;
+          border-radius: 8px;
+        }
+      `}</style>
     </div>
   );
 };

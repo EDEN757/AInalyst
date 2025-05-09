@@ -2,23 +2,26 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Install cron
+RUN apt-get update && apt-get install -y cron && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
+# Copy and install requirements
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
 # Make scripts executable
-RUN chmod +x /app/data_updater/*.py /app/run_data_updater.py
+RUN chmod +x /app/run_scheduled_update.py
+RUN chmod +x /app/setup_cron.sh
 
-# Command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Expose port
+EXPOSE 8000
+
+# Copy entrypoint script
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+# Use entrypoint script to start services
+ENTRYPOINT ["/app/entrypoint.sh"]

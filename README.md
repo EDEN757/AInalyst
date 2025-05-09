@@ -1,326 +1,231 @@
-# AInalyst
+# AInalyst: Finance Chatbot with RAG
 
-A Retrieval-Augmented Generation (RAG) chatbot that enables users to query information from SEC 10-K filings of companies using natural language.
+AInalyst is a Retrieval-Augmented Generation (RAG) powered finance chatbot that provides insights from SEC filings of U.S. public companies. The system intelligently fetches 10-K filings, processes them into semantic chunks, and provides a natural language interface for querying financial information.
 
-## Project Structure
+## 🎯 Features
 
-```
-AInalyst/
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── __init__.py
-│   │   │   ├── chat.py             # Chat endpoint for RAG interactions
-│   │   │   ├── companies.py        # Endpoints for company data
-│   │   │   └── companies_csv.py    # CSV import endpoint for companies
-│   │   ├── core/
-│   │   │   ├── __init__.py
-│   │   │   └── config.py           # Configuration with Embed/Chat separation
-│   │   ├── db/
-│   │   │   ├── __init__.py
-│   │   │   ├── crud.py             # Database operations
-│   │   │   └── database.py         # Database connection setup
-│   │   ├── models/
-│   │   │   ├── __init__.py
-│   │   │   ├── chat_models.py      # Pydantic models for the API
-│   │   │   └── database_models.py  # SQLAlchemy database models
-│   │   ├── services/
-│   │   │   ├── __init__.py
-│   │   │   ├── llm_clients.py      # LLM provider integrations
-│   │   │   └── rag_service.py      # Core RAG implementation
-│   │   ├── __init__.py
-│   │   └── main.py                 # FastAPI application
-│   ├── data_updater/
-│   │   ├── __init__.py
-│   │   ├── create_embeddings.py    # Uses ONLY Embedding config
-│   │   ├── fetch_sec.py            # Fetches SEC 10-K filings
-│   │   ├── process_docs.py         # Processes filings into chunks
-│   │   └── update_job.py           # Main update pipeline
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/
-│   ├── public/
-│   │   └── index.html
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── ChatMessage.js      # Chat message component
-│   │   │   ├── CompanySelect.js    # Company dropdown component
-│   │   │   └── CompanyManagement.js # Company management interface
-│   │   ├── App.css
-│   │   ├── App.js                  # Main React application
-│   │   ├── index.css
-│   │   └── index.js
-│   ├── Dockerfile
-│   └── package.json
-├── postgres/
-│   └── init.sql                    # pgvector extension setup
-├── companies_to_import.csv         # CSV file with companies to import
-├── docker-compose.yml              # Container orchestration
-├── LICENSE                         # MIT License
-└── README.md                       # This file
-```
+- **Automated SEC Filing Ingestion**: Automatically ingests 10-K filings for public companies specified in a CSV file
+- **Semantic Processing**: Parses and embeds text using OpenAI Embedding API, enabling semantic search
+- **Vector Database**: Efficiently stores and retrieves embeddings using PostgreSQL with pgvector extension
+- **Interactive UI**: Provides a React-based Chat UI with streaming responses and a comprehensive Database Explorer
+- **Scheduled Updates**: Auto-updates new filings on startup and via scheduled cron jobs
+- **Multi-model Support**: Supports different OpenAI models for embeddings and chat generation
+- **Easy Deployment**: Simple setup using Docker and Docker Compose
 
-## Architecture Overview
+## 🧩 System Architecture
 
-This application features a clear separation between the **embedding process** and the **chat generation process**:
+AInalyst follows a modular architecture:
 
-1. **Fixed Embedding Model**: A single, consistent embedding model (configured via `EMBEDDING_*` variables) is used for both:
-   - Processing document chunks during indexing
-   - Embedding user queries during RAG retrieval
+1. **Data Ingestion Pipeline**:
+   - Fetches SEC filings based on ticker symbols and year ranges from `companies.csv`
+   - Processes and extracts key sections from filings
+   - Chunks text into semantically meaningful units
 
-2. **Flexible Chat Model**: A separate chat model (configured via `CHAT_*` variables) is used exclusively for:
-   - Generating the final response based on retrieved text chunks
+2. **Vector Database**:
+   - PostgreSQL with pgvector extension for efficient similarity search
+   - HNSW index for fast approximate nearest neighbor search
+   - Stores document metadata and vector embeddings
 
-This separation allows you to optimize for different use cases:
-- Use smaller, faster embedding models for vector search
-- Use more powerful chat models for high-quality answer generation
+3. **Backend API**:
+   - FastAPI REST endpoints for chat, retrieval, and company information
+   - Streaming support for real-time chat responses
+   - Robust error handling and validation
 
-## Key Features
+4. **Frontend Application**:
+   - React-based UI with responsive design
+   - Real-time chat with streaming responses
+   - Database explorer for monitoring ingested data
 
-- **Vector Similarity Search**: Uses PostgreSQL with pgvector extension to store and query document vectors
-- **Configurable Models**: Set different providers and models for embedding vs. chat generation
-- **Interactive Chat Interface**: React-based UI with filtering by company and year
-- **Company Management Interface**: Add, view, and delete companies directly through the UI
-- **Document Processing Pipeline**: Fetches, extracts, chunks, and embeds SEC 10-K filings
-- **CSV Import**: Import companies from a CSV file
-- **Containerized Architecture**: Everything runs in Docker containers for easy deployment
+## 🛠️ Tech Stack
 
-## Technology Stack
-
-- **Backend**: Python 3.10+, FastAPI, SQLAlchemy, pgvector
+- **Backend**: Python, FastAPI, SQLAlchemy, asyncio
 - **Database**: PostgreSQL with pgvector extension
-- **Frontend**: React.js, Axios
-- **AI Services**:
-  - **Embedding**: OpenAI
-  - **Chat**: OpenAI
-- **Containerization**: Docker, Docker Compose
+- **Frontend**: React, React Router, SSE (Server-Sent Events)
+- **Embedding**: OpenAI Embedding API (text-embedding-3-small)
+- **LLM**: OpenAI Chat Completions API (supports both GPT-3.5-Turbo and GPT-4)
+- **Deployment**: Docker & Docker Compose
+- **Scheduling**: Cron for automated updates
 
-## Setup Instructions
+## 🚀 Getting Started
 
 ### Prerequisites
 
 - Docker and Docker Compose
-- API keys for OpenAI
+- OpenAI API key
 
 ### Installation
 
-1. Clone this repository:
-   ```
-   git clone <repository-url>
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/AInalyst.git
    cd AInalyst
    ```
 
-2. Create a `.env` file from the example:
-   ```
+2. Copy the environment variables template:
+   ```bash
    cp .env.example .env
    ```
 
-3. Configure your `.env` file:
+3. Edit the `.env` file with your configuration:
+   - `OPENAI_API_KEY`: Your OpenAI API key (required)
+   - `EDGAR_USER_AGENT`: Your contact information for SEC EDGAR API (e.g., "AInalyst user@example.com")
+   - `POSTGRES_URI`: Database connection string (defaults to "postgresql://postgres:postgres@postgres:5432/finance_rag_db")
+   - `DEFAULT_EMBEDDING_MODEL`: OpenAI embedding model (defaults to "text-embedding-3-small")
+   - `EMBEDDING_DIMENSION`: Embedding vector dimensions (defaults to 1536 for text-embedding-3-small)
+   - `DEFAULT_CHAT_MODEL`: OpenAI chat model (defaults to "gpt-3.5-turbo")
+   - `LOG_LEVEL`: Logging level (defaults to "INFO")
 
-   a. **Embedding Configuration** (Used for BOTH documents and queries):
-      ```
-      EMBEDDING_PROVIDER=OPENAI
-      EMBEDDING_MODEL=text-embedding-3-small
-      EMBEDDING_DIMENSION=1536
-      ```
-
-   b. **Chat Generation Configuration** (Used ONLY for final answer generation):
-      ```
-      CHAT_PROVIDER=OPENAI
-      CHAT_MODEL=gpt-4-turbo
-      ```
-
-   c. **API Keys**:
-      ```
-      OPENAI_API_KEY=your_openai_key
-      ```
-
-   d. **SEC Settings**:
-      ```
-      SEC_EMAIL=youremail@example.com
-      ```
-
-   e. **Database Settings**:
-      ```
-      DATABASE_URL=postgresql://postgres:postgres@db:5432/sp500_db
-      POSTGRES_USER=postgres
-      POSTGRES_PASSWORD=postgres
-      POSTGRES_DB=sp500_db
-      ```
-
-   f. **Application Configuration**:
-      ```
-      # Application mode
-      APP_MODE=FULL
-      ```
-
-4. **CRITICAL**: The `EMBEDDING_DIMENSION` parameter MUST accurately match the output dimension of your chosen `EMBEDDING_MODEL`. The database will create a `VECTOR(dimension)` column based on this value.
-
-### Running the Application
-
-1. Edit the `companies_to_import.csv` file in the project root with the companies you want to analyze:
-   ```
-   ticker,cik,start_date,end_date
-   AAPL,0000320193,2020-01-01,2023-12-31
-   MSFT,0000789019,2020-01-01,2023-12-31
-   GOOGL,0001652044,2020-01-01,2023-12-31
+4. Configure companies to analyze:
+   Edit the `companies.csv` file in the root directory with the following format:
+   ```csv
+   ticker,company_name,start_year,end_year
+   AAPL,Apple Inc.,2020,2023
+   MSFT,Microsoft Corporation,2020,2023
+   AMZN,Amazon.com Inc.,2020,2023
+   GOOGL,Alphabet Inc.,2020,2023
+   META,Meta Platforms Inc.,2020,2023
    ```
 
-2. Start all services:
-   ```
-   docker-compose up --build -d
-   ```
-
-3. Access the application:
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8000
-   - API Docs: http://localhost:8000/docs
-
-4. Import companies using the CSV method:
-   - Go to Company Management tab in the UI
-   - Click "Import from CSV"
-
-## Importing Companies Using CSV
-
-The system uses a CSV file to import companies and their 10-K filings from the SEC. The CSV file should be placed in the project root directory as `companies_to_import.csv`.
-
-### CSV Format
-
-The CSV file should contain the following columns:
-
-- `ticker`: Company ticker symbol (e.g., AAPL) - **Required**
-- `cik`: SEC Central Index Key (e.g., 0000320193) - *Optional but recommended for faster processing*
-- `start_date`: Start date in ISO format (YYYY-MM-DD) - *Optional (defaults to 3 years ago)*
-- `end_date`: End date in ISO format (YYYY-MM-DD) - *Optional (defaults to current year)*
-
-Example:
-```
-ticker,cik,start_date,end_date
-AAPL,0000320193,2020-01-01,2023-12-31
-MSFT,0000789019,2020-01-01,2023-12-31
-GOOGL,0001652044,2020-01-01,2023-12-31
-```
-
-#### Notes:
-- This application only supports 10-K filings
-- If `cik` is provided, it speeds up the import process
-- If `start_date` or `end_date` are not provided, reasonable defaults will be used
-- Processing happens in the background - check the status in the UI
-
-### Import Process
-
-1. Prepare the CSV file with the companies you want to import
-2. Place the file at the project root as `companies_to_import.csv`
-3. Go to the Company Management tab in the UI
-4. Click "Import from CSV"
-5. The system will process the companies in the background
-6. You can check the import status on the Company Management page
-
-## Usage
-
-1. **Company Management**: Access the "Company Management" tab to:
-   - View companies currently in your database
-   - See details of company filings
-   - Import companies via CSV
-   - Delete companies you no longer need
-
-2. **Chat Interface**: Enter questions about companies' 10-K filings:
-   - Filter by specific companies using the dropdown
-   - Filter by specific filing year
-   - View source documents for each answer
-
-Example questions:
-- "What are Apple's main risk factors?"
-- "How did Microsoft's revenue change from 2021 to 2022?"
-- "What is Amazon's strategy for international expansion?"
-
-## Troubleshooting
-
-### CSV Import Issues
-
-- **Missing CSV File**: Make sure the CSV file is named exactly `companies_to_import.csv` and placed in the project root directory.
-  
-  - **Solution**: If the file doesn't exist, the system will create a template file automatically. You can also use the API endpoint `GET /companies/csv-template` to get a template.
-
-- **CSV Format Issues**: Ensure the CSV has at least a ticker column. The system logs will show which rows were skipped and why.
-  
-  - **Solution**: Follow the format described in the "CSV Format" section above.
-
-- **No Companies Found**: Check the logs to see if any companies were successfully extracted from the CSV.
-  
-  - **Solution**: Verify that the CSV contains valid ticker symbols.
-
-### SEC API Rate Limits
-
-- **Rate Limit Errors**: The SEC API has rate limits that can cause fetch failures.
-  
-  - **Solution**: The system includes pauses to respect rate limits, but if you're processing many companies, you might need to split the imports into smaller batches.
-
-### Connection Issues
-
-If the frontend can't connect to the backend:
-
-1. Check that both containers are running: `docker-compose ps`
-2. Verify the backend logs for errors: `docker-compose logs backend`
-3. Make sure the frontend is configured with the correct API URL
-4. Check for CORS issues in the backend logs
-
-### No Context Found / Empty Search Results
-
-If the system reports "No context found" or gives generic responses despite having companies in the database:
-
-1. **Check Database Status**: Verify that companies, filings, and chunks are properly imported:
+5. Build and start the application:
    ```bash
-   docker-compose exec db psql -U postgres -d sp500_db -c "SELECT COUNT(*) FROM companies;"
-   docker-compose exec db psql -U postgres -d sp500_db -c "SELECT COUNT(*) FROM filings;"
-   docker-compose exec db psql -U postgres -d sp500_db -c "SELECT COUNT(*) FROM text_chunks WHERE embedded = true;"
+   docker-compose build
+   docker-compose up -d
    ```
 
-2. **Manually Create Embeddings**: If necessary, force the creation of embeddings:
+6. Monitor logs (optional):
    ```bash
-   docker-compose exec backend python -c 'from app.db.database import SessionLocal; from data_updater.create_embeddings import create_embeddings; db = SessionLocal(); print(create_embeddings(db)); db.close()'
+   # View all logs
+   docker-compose logs -f
+
+   # View only backend logs
+   docker-compose logs -f backend
    ```
 
-3. **Run Data Updater**: Process any unprocessed filings:
+7. Access the application:
+   - Frontend UI: http://localhost:3000
+   - Backend API: http://localhost:8000/docs (Swagger UI for API documentation)
+
+## 📊 Usage
+
+### Data Ingestion
+
+1. The application will automatically analyze `companies.csv` on startup and begin fetching any missing filings.
+2. Initial data ingestion may take some time, depending on the number of companies and years.
+3. The system will also run daily updates at 03:00 UTC to check for any new filings.
+4. You can monitor ingestion status in the "Company Database" section of the UI.
+
+### Chat Interface
+
+1. Navigate to the Chat page from the main menu.
+2. (Optional) Select a specific company, year, or section from the filters to focus your questions.
+3. Ask questions about the companies and their financial data:
+   - "What were Apple's main risk factors in 2022?"
+   - "Summarize Microsoft's business strategy"
+   - "How did Amazon's revenue change from 2020 to 2022?"
+   - "What are the key competitive advantages of Google?"
+   - "Compare the R&D spending of tech companies"
+4. The system will retrieve relevant sections from the filings and generate a response.
+5. View source information by clicking "Show Sources" below each assistant message.
+
+### Database Explorer
+
+1. Navigate to the "Company Database" page from the main menu.
+2. View all companies currently in the database.
+3. Monitor ingestion status for each company.
+4. See which years are available for each company.
+5. Track progress of data ingestion across your database.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 📚 Documentation
+
+For more detailed documentation, please refer to the [docs](docs/) directory.
+
+## 🔧 Technical Details
+
+### PostgreSQL Vector Database
+
+AInalyst uses PostgreSQL with the pgvector extension for efficient similarity search:
+
+1. **pgvector Extension**: This extension enables PostgreSQL to store and query vector embeddings.
+2. **Tables**:
+   - `filings_metadata`: Stores metadata about the filings (ticker, year, document type, etc.)
+   - `document_vectors`: Stores the vector embeddings linked to metadata via `doc_id`
+3. **HNSW Index**: AInalyst uses Hierarchical Navigable Small World (HNSW) indexing for efficient approximate nearest-neighbor search:
+   ```sql
+   CREATE INDEX idx_hnsw_embedding ON document_vectors USING hnsw (embedding vector_l2_ops);
+   ```
+   This significantly improves query performance for large vector datasets.
+
+### Embedding and Chunking
+
+1. **Text Embedding**: Uses OpenAI's embedding models (default: text-embedding-3-small) to create vector representations.
+2. **Chunking Strategy**: Documents are split into overlapping chunks of approximately 1000 tokens to ensure context preservation.
+3. **Deduplication**: Uses text hash to avoid storing duplicate content.
+
+### Auto-Update System
+
+1. **On-Launch Update**: When the backend starts, it automatically checks for missing filings.
+2. **Scheduled Update**: A cron job runs daily at 03:00 UTC to check for new filings.
+3. **Differential Updates**: Only fetches what's missing by comparing `companies.csv` against the database.
+
+## ⚙️ Advanced Configuration
+
+### Modifying Database Schema
+
+If you need to modify the database schema:
+
+1. Edit the `postgres/init.sql` file
+2. Rebuild your containers:
    ```bash
-   docker-compose exec backend python run_data_updater.py
+   docker-compose down
+   docker-compose up -d --build
    ```
 
-4. **Monitor Progress**: Check embedding progress with:
-   ```bash
-   docker-compose exec db psql -U postgres -d sp500_db -c "SELECT COUNT(*) as total_chunks, SUM(CASE WHEN embedded THEN 1 ELSE 0 END) as embedded_chunks FROM text_chunks;"
-   ```
+### Changing Embedding Dimensions
 
-### API Implementation Issues
+If you want to use a different embedding model:
 
-If you encounter problems with the API:
+1. Update the `DEFAULT_EMBEDDING_MODEL` in your `.env` file
+2. Make sure to update the `EMBEDDING_DIMENSION` to match (e.g., 1536 for text-embedding-3-small)
+3. You'll need to recreate your database as the vector dimensions cannot be changed after creation
 
-1. **Check OpenAI API Key**: Verify that your OpenAI API key is valid and has sufficient credits.
-2. **Enable Debug Logging**: Add `LOG_LEVEL=DEBUG` to your .env file for more detailed logs.
-3. **Inspect API Documentation**: Visit http://localhost:8000/docs to explore available endpoints.
+### Custom Deployment
 
-## Common Issues and Solutions
+For production deployment:
 
-### Problem: Import Process Takes Too Long
+1. Modify `docker-compose.yml` to use non-development settings:
+   - Remove volume mounts for code directories
+   - Use production-ready database settings
+   - Set appropriate resource limits
+2. Consider using managed PostgreSQL with pgvector support
+3. Update CORS settings in `backend/app/main.py`
 
-- **Cause**: Processing many companies at once or SEC API rate limits.
-- **Solution**: Import fewer companies at a time or provide CIK values to speed up lookups.
+## ❓ FAQ
 
-### Problem: Search Returns No Results
+**Q: How much does it cost to run?**
+A: Costs are primarily associated with the OpenAI API. Embedding documents uses the Embedding API, and chatting uses the Chat Completions API. For a few companies over a 3-4 year period, expect costs of a few dollars for initial ingestion and cents per chat interaction.
 
-- **Cause**: No embedded chunks or query not matching available content.
-- **Solution**: Verify embeddings exist (see above). Try different search terms or filter by companies that you know have data.
+**Q: How long does data ingestion take?**
+A: Initial ingestion depends on the number of companies and years. SEC API has rate limits (10 requests/second), so downloading filings can take time. Processing 5 companies over 4 years might take 30-60 minutes.
 
-### Problem: Database Connection Errors
+**Q: Can I add companies while the system is running?**
+A: Yes! Simply edit the `companies.csv` file and the system will detect new entries during the next scheduled update (daily at 03:00 UTC). Alternatively, restart the backend to trigger an immediate check.
 
-- **Cause**: PostgreSQL not fully initialized or incorrect credentials.
-- **Solution**: Check if the database container is running and verify credentials in .env file.
+**Q: Why PostgreSQL with pgvector instead of a dedicated vector database?**
+A: This provides a single, familiar database technology that handles both metadata and vectors, simplifies deployment, and offers good performance with proper indexing.
 
-## License
-
-[MIT License](LICENSE)
-
-## Acknowledgments
-
-- This project uses the SEC's EDGAR database for company filings
-- Built with OpenAI for embeddings and chat generation
+**Q: How can I customize the document processing?**
+A: You can modify the text processing and chunking logic in `backend/data_updater/process_docs.py` to adjust how documents are split or which sections are extracted.

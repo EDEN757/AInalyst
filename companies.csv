@@ -1,0 +1,7 @@
+ticker,company_name,start_year,end_year
+AAPL,Apple Inc.,2020,2023
+MSFT,Microsoft Corporation,2020,2023
+AMZN,Amazon.com Inc.,2020,2023
+GOOGL,Alphabet Inc.,2020,2023
+META,Meta Platforms Inc.,2020,2023
+EOL < /dev/null

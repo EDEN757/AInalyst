@@ -1,250 +1,104 @@
-import logging
-import time
-import datetime
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import SQLAlchemyError
-import traceback
-import sys
+import logging
+import os
+import uvicorn
+import asyncio
+from typing import Callable
+import threading
 
-from .api import chat, companies, companies_csv
 from .core.config import settings
-from .db.database import engine
+from .api import chat, companies, companies_csv, retrieval
+from .db.database import SessionLocal
+from .data_updater.scheduler import on_launch_update
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    level=settings.LOG_LEVEL,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
+# Create FastAPI app
 app = FastAPI(
-    title="S&P 500 10-K RAG Chatbot API",
-    description="A RAG-based chatbot for querying S&P 500 companies' 10-K filings",
-    version="1.0.0"
+    title="AInalyst API",
+    description="API for AInalyst, a Finance Chatbot with RAG",
+    version="0.1.0",
 )
 
-# Configure CORS - make sure to allow any origin for development
+# Function to run on-launch update in the background
+def run_background_update():
+    """Run the on-launch update in a background thread."""
+    async def async_update():
+        try:
+            db = SessionLocal()
+            try:
+                logger.info("Starting on-launch data update...")
+                stats = await on_launch_update(db)
+                if "error" in stats:
+                    logger.error(f"On-launch update failed: {stats['error']}")
+                else:
+                    logger.info(f"On-launch update completed: {stats['total']}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error in on-launch update: {str(e)}")
+
+    # Create event loop for the thread
+    def run_async_update():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(async_update())
+        loop.close()
+
+    # Start update in a separate thread
+    thread = threading.Thread(target=run_async_update)
+    thread.daemon = True
+    thread.start()
+
+# Create startup event handler
+@app.on_event("startup")
+def startup_event():
+    """Runs when the application starts."""
+    logger.info("Starting AInalyst API")
+    # Run data update in the background
+    run_background_update()
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For development - allows requests from any origin
+    allow_origins=["*"],  # For development; restrict in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
-# Add explicit CORS headers to all responses via middleware
-@app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-    response = await call_next(request)
-    # Add CORS headers to every response
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    return response
-
-# Include routers
-app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
-app.include_router(companies.router, prefix="/api/v1", tags=["companies"])
-app.include_router(companies_csv.router, prefix="/api/v1", tags=["companies-csv"])
-
-# Middleware for request logging
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    request_id = str(time.time())
-    request.state.start_time = time.time()
-    request.state.request_id = request_id
-    
-    client_ip = request.client.host if request.client else "unknown"
-    logger.info(f"Request {request_id} started: {request.method} {request.url.path} from {client_ip}")
-    
-    try:
-        response = await call_next(request)
-        
-        process_time = time.time() - request.state.start_time
-        logger.info(
-            f"Request {request_id} completed: {request.method} {request.url.path} "
-            f"status={response.status_code} duration={process_time:.3f}s"
-        )
-        
-        # Add processing time header
-        response.headers["X-Process-Time"] = str(process_time)
-        return response
-    except Exception as e:
-        logger.error(f"Request {request_id} failed: {str(e)}")
-        logger.error(traceback.format_exc())
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "Internal server error"},
-        )
-
-# Startup event to check database connection and initialize tables
-@app.on_event("startup")
-async def startup_db_client():
-    logger.info("Starting up application...")
-    
-    # First attempt - try standard database initialization
-    try:
-        # Verify database connection
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT 1"))
-            if result:
-                logger.info("✅ Successfully connected to the database")
-            else:
-                logger.error("❌ Failed to validate database connection")
-        
-        # Initialize database tables if they don't exist
-        from app.db.database import Base
-        from app.models.database_models import Company, Filing, TextChunk
-        logger.info("Creating database tables if they don't exist...")
-        Base.metadata.create_all(bind=engine)
-        logger.info("✅ Database tables created or verified")
-        
-        # Verify tables were actually created
-        try:
-            with engine.connect() as conn:
-                # Try to query the companies table
-                conn.execute(text("SELECT 1 FROM companies LIMIT 1"))
-                logger.info("✓ Verified companies table exists")
-        except Exception as table_error:
-            logger.warning(f"Companies table check failed: {str(table_error)}")
-            # If this fails, we'll try more aggressively below
-            raise
-                
-        # Log configuration information
-        logger.info(f"Application Mode: {settings.APP_MODE}")
-        logger.info(f"Embedding Provider: {settings.EMBEDDING_PROVIDER}")
-        logger.info(f"Embedding Model: {settings.EMBEDDING_MODEL}")
-        logger.info(f"Chat Provider: {settings.CHAT_PROVIDER}")
-        logger.info(f"Chat Model: {settings.CHAT_MODEL}")
-        
-    except Exception as e:
-        # Log the error but don't exit - try more aggressively
-        logger.error(f"❌ Database initialization error: {str(e)}")
-        logger.error(traceback.format_exc())
-        
-        # Second attempt - more forceful approach with explicit SQL
-        logger.warning("Attempting alternative database initialization...")
-        try:
-            # Force-create tables with SQL
-            with engine.connect() as conn:
-                # Create vector extension first
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                
-                # Companies table
-                conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS companies (
-                    id SERIAL PRIMARY KEY,
-                    symbol VARCHAR(10) UNIQUE,
-                    name VARCHAR(255),
-                    sector VARCHAR(255),
-                    industry VARCHAR(255),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """))
-                
-                # Filings table
-                conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS filings (
-                    id SERIAL PRIMARY KEY,
-                    company_id INTEGER REFERENCES companies(id),
-                    filing_type VARCHAR(10),
-                    filing_date TIMESTAMP,
-                    filing_url TEXT,
-                    accession_number VARCHAR(100) UNIQUE,
-                    fiscal_year INTEGER,
-                    fiscal_period VARCHAR(10),
-                    processed BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """))
-                
-                # Text chunks table with vector support
-                conn.execute(text(f"""
-                CREATE TABLE IF NOT EXISTS text_chunks (
-                    id SERIAL PRIMARY KEY,
-                    filing_id INTEGER REFERENCES filings(id),
-                    chunk_index INTEGER,
-                    text_content TEXT,
-                    section VARCHAR(255),
-                    page_number INTEGER,
-                    embedded BOOLEAN DEFAULT FALSE,
-                    embedding vector({settings.EMBEDDING_DIMENSION}),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """))
-                
-                conn.commit()
-                logger.info("✅ Database tables created with SQL")
-                
-        except Exception as sql_error:
-            logger.error(f"💥 Failed to create tables with SQL: {str(sql_error)}")
-            logger.error(traceback.format_exc())
-
-# Shutdown event to clean up resources
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    logger.info("Shutting down application...")
-    # Engine has built-in cleanup
-
+# Root endpoint
 @app.get("/")
 async def root():
-    try:
-        # Test database connection
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-            db_status = "connected"
-    except Exception as e:
-        logger.error(f"Database connection check failed: {str(e)}")
-        db_status = f"error: {str(e)}"
-    
-    return {
-        "message": "S&P 500 10-K RAG Chatbot API",
-        "mode": settings.APP_MODE,
-        "embedding_provider": settings.EMBEDDING_PROVIDER,
-        "embedding_model": settings.EMBEDDING_MODEL,
-        "chat_provider": settings.CHAT_PROVIDER,
-        "chat_model": settings.CHAT_MODEL,
-        "database_status": db_status
-    }
+    return {"message": "Welcome to AInalyst API!"}
 
+# Health check endpoint
 @app.get("/health")
 async def health_check():
-    # Check database connection
-    try:
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-            db_status = "ok"
-    except Exception as e:
-        logger.error(f"Health check database connection failed: {str(e)}")
-        db_status = "error"
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "status": "error",
-                "database": db_status,
-                "error": str(e)
-            }
-        )
+    return {"status": "healthy"}
 
-    return {
-        "status": "ok",
-        "database": db_status,
-        "version": "1.0.0"
-    }
+# Include routers
+app.include_router(retrieval.router, prefix=f"{settings.API_PREFIX}/search", tags=["Search"])
+app.include_router(chat.router, prefix=f"{settings.API_PREFIX}/chat", tags=["Chat"])
+app.include_router(companies.router, prefix=f"{settings.API_PREFIX}/data", tags=["Companies"])
+app.include_router(companies_csv.router, prefix=f"{settings.API_PREFIX}/data", tags=["Companies CSV"])
 
-@app.get("/ping")
-async def ping():
-    """Simple ping endpoint for connectivity testing"""
-    return {"ping": "pong", "time": datetime.datetime.now().isoformat()}
+# Error handler for generic exceptions
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred"},
+    )
+
+# Main entry point
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,150 +1,102 @@
-import logging
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import func, distinct
 from typing import List, Dict, Any
 
-from ..db.database import get_db, Base, engine
-from ..db import crud
-from ..models.database_models import Company
-
-# Ensure database tables exist
-try:
-    Base.metadata.create_all(bind=engine)
-    logging.getLogger(__name__).info("Database tables created if they didn't exist")
-except Exception as e:
-    logging.getLogger(__name__).error(f"Error creating database tables: {str(e)}")
-
-# Configure logging
-logger = logging.getLogger(__name__)
+from ..db.database import get_db
+from ..models.database_models import FilingMetadata
 
 router = APIRouter()
 
-
-@router.get("/companies", response_model=List[dict])
-async def get_companies(
-    request: Request, 
-    skip: int = 0, 
-    limit: int = 100, 
-    db: Session = Depends(get_db)
-):
-    """Get a list of all companies in the database"""
-    client_ip = request.client.host if request.client else "unknown"
-    logger.info(f"GET /companies request from {client_ip} (skip={skip}, limit={limit})")
+@router.get("/companies")
+async def get_companies(db: Session = Depends(get_db)):
+    """
+    Get a list of all companies in the database.
     
-    try:
-        # Get start_time if it exists, otherwise it's None
-        start_time = getattr(request.state, "start_time", None)
-        companies = crud.get_companies(db=db, skip=skip, limit=limit)
-        
-        if not companies:
-            logger.warning(f"No companies found in database from request {client_ip}")
-            return []
-            
-        logger.info(f"Retrieved {len(companies)} companies from database")
-        return [
-            {
-                "symbol": company.symbol,
-                "name": company.name,
-                "sector": company.sector,
-                "industry": company.industry,
-                "filings_count": len(company.filings)
+    Returns:
+    - List of unique tickers with their respective years and document counts
+    """
+    # Query for unique tickers and their metadata
+    results = db.query(
+        FilingMetadata.ticker,
+        FilingMetadata.year,
+        func.count().label('document_count')
+    ).group_by(
+        FilingMetadata.ticker,
+        FilingMetadata.year
+    ).all()
+    
+    # Organize results by ticker
+    companies = {}
+    for ticker, year, doc_count in results:
+        if ticker not in companies:
+            companies[ticker] = {
+                "ticker": ticker,
+                "years": [],
+                "total_documents": 0
             }
-            for company in companies
-        ]
-    except SQLAlchemyError as e:
-        logger.error(f"Database error in get_companies: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error in get_companies: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while fetching companies.",
-        )
-
-
-@router.get("/companies/{symbol}/filings", response_model=List[Dict[str, Any]])
-async def get_company_filings(symbol: str, request: Request, db: Session = Depends(get_db)):
-    """Get all filings for a specific company"""
-    client_ip = request.client.host if request.client else "unknown"
-    logger.info(f"GET /companies/{symbol}/filings request from {client_ip}")
+        
+        companies[ticker]["years"].append(year)
+        companies[ticker]["total_documents"] += doc_count
     
-    try:
-        company = crud.get_company_by_symbol(db=db, symbol=symbol)
-        if not company:
-            logger.warning(f"Company with symbol {symbol} not found for request from {client_ip}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
-                detail=f"Company with symbol {symbol} not found"
-            )
-        
-        if not company.filings:
-            logger.info(f"No filings found for company {symbol}")
-            return []
-            
-        logger.info(f"Retrieved {len(company.filings)} filings for company {symbol}")
-        return [
-            {
-                "id": filing.id,
-                "filing_type": filing.filing_type,
-                "filing_date": filing.filing_date,
-                "fiscal_year": filing.fiscal_year,
-                "fiscal_period": filing.fiscal_period,
-                "accession_number": filing.accession_number,
-                "processed": filing.processed,
-                "chunks_count": len(filing.chunks)
-            }
-            for filing in company.filings
-        ]
-    except HTTPException:
-        # Re-raise HTTP exceptions without wrapping
-        raise
-    except SQLAlchemyError as e:
-        logger.error(f"Database error retrieving filings for {symbol}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}",
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error retrieving filings for {symbol}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while fetching company filings.",
-        )
-
-
-@router.delete("/companies/{symbol}", status_code=status.HTTP_200_OK)
-async def delete_company(symbol: str, request: Request, db: Session = Depends(get_db)):
-    """Delete a company and all its associated data"""
-    client_ip = request.client.host if request.client else "unknown"
-    logger.info(f"DELETE /companies/{symbol} request from {client_ip}")
+    # Convert to list and sort by ticker
+    company_list = list(companies.values())
+    for company in company_list:
+        company["years"].sort()
     
-    try:
-        # Check if company exists
-        company = crud.get_company_by_symbol(db=db, symbol=symbol)
-        if not company:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Company with symbol {symbol} not found"
-            )
-        
-        # Delete the company and all associated filings/chunks
-        crud.delete_company(db=db, company_id=company.id)
-        
-        return {
-            "status": "success",
-            "message": f"Company {symbol} and all its data successfully deleted"
-        }
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting company {symbol}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error deleting company: {str(e)}"
-        )
+    company_list.sort(key=lambda x: x["ticker"])
+    
+    return company_list
+
+@router.get("/companies/{ticker}")
+async def get_company_data(ticker: str, db: Session = Depends(get_db)):
+    """
+    Get detailed data for a specific company.
+    
+    Parameters:
+    - ticker: The company ticker symbol
+    
+    Returns:
+    - Detailed information about the company's filings
+    """
+    # Check if company exists
+    company = db.query(FilingMetadata).filter(FilingMetadata.ticker == ticker).first()
+    if not company:
+        raise HTTPException(status_code=404, detail=f"Company with ticker {ticker} not found")
+    
+    # Get years available
+    years = db.query(
+        distinct(FilingMetadata.year)
+    ).filter(
+        FilingMetadata.ticker == ticker
+    ).order_by(
+        FilingMetadata.year
+    ).all()
+    years = [y[0] for y in years]
+    
+    # Get document types
+    doc_types = db.query(
+        distinct(FilingMetadata.document_type)
+    ).filter(
+        FilingMetadata.ticker == ticker
+    ).all()
+    doc_types = [dt[0] for dt in doc_types]
+    
+    # Get section counts
+    section_counts = db.query(
+        FilingMetadata.section_name,
+        func.count().label('count')
+    ).filter(
+        FilingMetadata.ticker == ticker
+    ).group_by(
+        FilingMetadata.section_name
+    ).all()
+    section_counts = {sc[0]: sc[1] for sc in section_counts}
+    
+    return {
+        "ticker": ticker,
+        "years": years,
+        "document_types": doc_types,
+        "section_counts": section_counts,
+        "total_documents": sum(section_counts.values())
+    }

@@ -1,97 +1,230 @@
-import React, { useState, useRef, useEffect } from 'react';
-import '../App.css';
+import React, { useState, useEffect } from 'react';
+import { useAppContext } from '../context/AppContext';
+import { getCompanies, getCompanyDetails } from '../utils/api';
 
-const CompanySelect = ({ companies, selectedCompanies, onChange }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
+const CompanySelect = () => {
+  // Get context values
+  const { 
+    companies: contextCompanies,
+    selectedCompany, 
+    setSelectedCompany, 
+    selectedYear, 
+    setSelectedYear,
+    selectedSection,
+    setSelectedSection, 
+    clearFilters
+  } = useAppContext();
 
-  // Close dropdown when clicking outside
+  // Local state
+  const [companies, setCompanies] = useState([]);
+  const [companyDetails, setCompanyDetails] = useState(null);
+  const [years, setYears] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Initialize companies from context if available
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  const toggleDropdown = () => {
-    setIsOpen(!isOpen);
-  };
-
-  const handleCompanyToggle = (symbol) => {
-    let newSelection;
-    
-    if (symbol === 'all') {
-      // "All Companies" option - clears all selections
-      newSelection = [];
-    } else if (selectedCompanies.includes(symbol)) {
-      // Remove company if already selected
-      newSelection = selectedCompanies.filter(s => s !== symbol);
+    if (contextCompanies && contextCompanies.length > 0) {
+      setCompanies(contextCompanies);
     } else {
-      // Add company if not selected
-      newSelection = [...selectedCompanies, symbol];
+      fetchCompanies();
     }
+  }, [contextCompanies]);
+
+  // Fetch company details when selected company changes
+  useEffect(() => {
+    if (selectedCompany) {
+      fetchCompanyDetails(selectedCompany);
+    } else {
+      setCompanyDetails(null);
+      setYears([]);
+      setSections([]);
+    }
+  }, [selectedCompany]);
+
+  // Fetch companies
+  const fetchCompanies = async () => {
+    setLoading(true);
+    setError(null);
     
-    onChange(newSelection);
+    try {
+      const data = await getCompanies();
+      setCompanies(data);
+    } catch (err) {
+      console.error('Error fetching companies:', err);
+      setError('Failed to load companies');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Display text for the select box
-  const getDisplayText = () => {
-    if (selectedCompanies.length === 0) {
-      return "All Companies";
-    } else if (selectedCompanies.length === 1) {
-      const company = companies.find(c => c.symbol === selectedCompanies[0]);
-      return company ? `${company.name} (${company.symbol})` : selectedCompanies[0];
-    } else {
-      return `${selectedCompanies.length} Companies Selected`;
+  // Fetch company details
+  const fetchCompanyDetails = async (ticker) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const details = await getCompanyDetails(ticker);
+      setCompanyDetails(details);
+      
+      // Get available years
+      if (details.years) {
+        setYears(details.years);
+      }
+      
+      // Get available sections
+      if (details.section_counts) {
+        const sectionList = Object.keys(details.section_counts).map(section => ({
+          name: section,
+          count: details.section_counts[section]
+        }));
+        setSections(sectionList);
+      }
+    } catch (err) {
+      console.error(`Error fetching details for ${ticker}:`, err);
+      setError(`Failed to load details for ${ticker}`);
+      setCompanyDetails(null);
+      setYears([]);
+      setSections([]);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="company-select" ref={dropdownRef}>
-      <label htmlFor="companySelect">Companies:</label>
-      <div className="custom-select">
-        <div className="select-header" onClick={toggleDropdown}>
-          {getDisplayText()}
-          <span className="dropdown-arrow">{isOpen ? '▲' : '▼'}</span>
-        </div>
-        
-        {isOpen && (
-          <div className="select-options">
-            <div 
-              className="select-option"
-              onClick={() => handleCompanyToggle('all')}
-            >
-              <input 
-                type="checkbox" 
-                checked={selectedCompanies.length === 0} 
-                readOnly 
-              />
-              <span>All Companies</span>
-            </div>
-            
-            {companies.map((company) => (
-              <div 
-                key={company.symbol} 
-                className="select-option"
-                onClick={() => handleCompanyToggle(company.symbol)}
-              >
-                <input 
-                  type="checkbox" 
-                  checked={selectedCompanies.includes(company.symbol)} 
-                  readOnly 
-                />
-                <span>{company.name} ({company.symbol})</span>
-              </div>
-            ))}
-          </div>
-        )}
+    <div className="company-select">
+      {/* Company dropdown */}
+      <div className="select-container">
+        <label htmlFor="company-select">Company</label>
+        <select
+          id="company-select"
+          className="select-field"
+          value={selectedCompany}
+          onChange={(e) => setSelectedCompany(e.target.value)}
+          disabled={loading}
+        >
+          <option value="">All Companies</option>
+          {companies.map((company) => (
+            <option key={company.ticker} value={company.ticker}>
+              {company.ticker}
+            </option>
+          ))}
+        </select>
       </div>
+      
+      {/* Year dropdown */}
+      <div className="select-container">
+        <label htmlFor="year-select">Year</label>
+        <select
+          id="year-select"
+          className="select-field"
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(e.target.value)}
+          disabled={loading || !selectedCompany || years.length === 0}
+        >
+          <option value="">All Years</option>
+          {years.map((year) => (
+            <option key={year} value={year}>
+              {year}
+            </option>
+          ))}
+        </select>
+      </div>
+      
+      {/* Section dropdown */}
+      <div className="select-container">
+        <label htmlFor="section-select">Section</label>
+        <select
+          id="section-select"
+          className="select-field"
+          value={selectedSection}
+          onChange={(e) => setSelectedSection(e.target.value)}
+          disabled={loading || !selectedCompany || sections.length === 0}
+        >
+          <option value="">All Sections</option>
+          {sections.map((section) => (
+            <option key={section.name} value={section.name}>
+              {section.name} ({section.count})
+            </option>
+          ))}
+        </select>
+      </div>
+      
+      {/* Clear filters button */}
+      {(selectedCompany || selectedYear || selectedSection) && (
+        <button 
+          className="clear-button"
+          onClick={clearFilters}
+          disabled={loading}
+        >
+          Clear Filters
+        </button>
+      )}
+      
+      {/* Error message */}
+      {error && <div className="error-message">{error}</div>}
+      
+      <style jsx>{`
+        .company-select {
+          display: flex;
+          gap: 12px;
+          align-items: flex-end;
+          flex-wrap: wrap;
+        }
+        
+        .select-container {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        
+        label {
+          font-size: 0.8rem;
+          color: var(--text-light);
+        }
+        
+        .select-field {
+          padding: 8px 12px;
+          border: 1px solid var(--border-color);
+          border-radius: var(--border-radius);
+          background-color: white;
+          min-width: 150px;
+        }
+        
+        .select-field:focus {
+          outline: none;
+          border-color: var(--primary-color);
+          box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+        }
+        
+        .select-field:disabled {
+          background-color: #f5f5f5;
+          cursor: not-allowed;
+        }
+        
+        .clear-button {
+          padding: 8px 12px;
+          background-color: transparent;
+          border: 1px solid var(--border-color);
+          color: var(--text-light);
+          border-radius: var(--border-radius);
+          cursor: pointer;
+          transition: all 0.2s;
+          align-self: flex-end;
+          height: 34px;
+        }
+        
+        .clear-button:hover {
+          background-color: #f5f5f5;
+        }
+        
+        .error-message {
+          color: var(--error-color);
+          font-size: 0.9em;
+          margin-left: 12px;
+        }
+      `}</style>
     </div>
   );
 };

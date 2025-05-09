@@ -1,79 +1,184 @@
-from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
+from typing import List, Dict, Any, Optional, Tuple
+import hashlib
+import logging
 
-from ..core.config import settings
+from .llm_clients import create_embedding, create_embedding_sync, generate_completion
 from ..db import crud
-from ..models.chat_models import UserQuery, ChatResponse
-from . import llm_clients
+from ..core.config import settings
 
+# Configure logging
+logger = logging.getLogger(__name__)
 
-def generate_answer(db: Session, user_query: UserQuery) -> ChatResponse:
-    """Generate an answer to a user query using RAG (Retrieval-Augmented Generation).
-    
-    Args:
-        db: Database session
-        user_query: The query from the user
-        
-    Returns:
-        A ChatResponse object containing the answer and sources
+async def get_similar_documents(
+    db: Session,
+    query: str,
+    ticker: Optional[str] = None,
+    year: Optional[int] = None,
+    document_type: Optional[str] = None,
+    section_name: Optional[str] = None,
+    k: int = 5,
+    similarity_threshold: float = 0.5
+) -> List[Dict[str, Any]]:
     """
-    # 1. Generate query embedding using the EMBEDDING configuration
-    query_embedding = llm_clients.get_embedding(user_query.query, settings)
+    Get documents similar to the query.
     
-    # 2. Perform vector search to find relevant chunks
-    relevant_chunks = crud.search_chunks_by_embedding(
-        db=db,
-        query_embedding=query_embedding,
-        company_symbols=user_query.company_symbols,
-        filing_year=user_query.filing_year,
-        limit=settings.RAG_TOP_K
-    )
+    Parameters:
+    - db: Database session
+    - query: The query text
+    - ticker: Optional filter by ticker
+    - year: Optional filter by year
+    - document_type: Optional filter by document type
+    - section_name: Optional filter by section name
+    - k: Number of results to return
+    - similarity_threshold: Minimum similarity score threshold
     
-    if not relevant_chunks:
-        # No relevant information found
-        return ChatResponse(
-            answer="I couldn't find any relevant information for your query. Please try asking something about S&P 500 companies' 10-K filings."
-        )
-    
-    # 3. Prepare context from retrieved chunks
-    context_parts = []
-    sources = []
-    
-    for chunk in relevant_chunks:
-        # Add source information
-        filing = chunk.filing
-        company = filing.company
+    Returns:
+    - List of similar documents with their metadata and text
+    """
+    try:
+        # Create embedding for the query
+        query_embedding = await create_embedding(query, settings.DEFAULT_EMBEDDING_MODEL)
         
-        source_info = f"{company.name} ({company.symbol}) - {filing.filing_type} {filing.fiscal_year}"
-        if source_info not in sources:
-            sources.append(source_info)
-        
-        # Add chunk text with metadata to context
-        context_parts.append(
-            f"Source: {source_info}\n" +
-            f"Section: {chunk.section or 'N/A'}\n" +
-            f"Content: {chunk.text_content}\n"
+        # Get similar documents from the database
+        similar_docs = crud.get_similar_documents(
+            db=db,
+            query_embedding=query_embedding,
+            k=k,
+            ticker=ticker,
+            year=year,
+            document_type=document_type,
+            section_name=section_name,
+            similarity_threshold=similarity_threshold
         )
+        
+        # Log the results
+        logger.info(f"Retrieved {len(similar_docs)} similar documents for query: '{query}'")
+        if len(similar_docs) > 0:
+            avg_similarity = sum(doc["similarity_score"] for doc in similar_docs) / len(similar_docs)
+            logger.info(f"Average similarity score: {avg_similarity:.4f}")
+        
+        return similar_docs
     
-    context = "\n---\n".join(context_parts)
+    except Exception as e:
+        logger.error(f"Error getting similar documents: {str(e)}")
+        # Return empty list in case of error
+        return []
+
+def get_similar_documents_sync(
+    db: Session,
+    query: str,
+    ticker: Optional[str] = None,
+    year: Optional[int] = None,
+    document_type: Optional[str] = None,
+    section_name: Optional[str] = None,
+    k: int = 5,
+    similarity_threshold: float = 0.5
+) -> List[Dict[str, Any]]:
+    """
+    Get documents similar to the query (synchronous version).
     
-    # 4. Generate answer using the CHAT configuration
-    prompt = (
-        "You are a financial analyst assistant that provides information from company SEC filings. " +
-        "Answer the user's question based ONLY on the context provided. " +
-        "If the context doesn't contain the relevant information, say that you don't have enough information to answer. " +
-        "Don't make up any information. Be clear, concise, and informative. " +
-        "Format your answers in plain text with line breaks for readability."
-    )
+    Parameters:
+    - db: Database session
+    - query: The query text
+    - ticker: Optional filter by ticker
+    - year: Optional filter by year
+    - document_type: Optional filter by document type
+    - section_name: Optional filter by section name
+    - k: Number of results to return
+    - similarity_threshold: Minimum similarity score threshold
     
-    answer = llm_clients.generate_chat_response(
-        prompt=prompt, 
-        context=context, 
-        query=user_query.query,
-        config=settings
-    )
+    Returns:
+    - List of similar documents with their metadata and text
+    """
+    try:
+        # Create embedding for the query
+        query_embedding = create_embedding_sync(query, settings.DEFAULT_EMBEDDING_MODEL)
+        
+        # Get similar documents from the database
+        similar_docs = crud.get_similar_documents(
+            db=db,
+            query_embedding=query_embedding,
+            k=k,
+            ticker=ticker,
+            year=year,
+            document_type=document_type,
+            section_name=section_name,
+            similarity_threshold=similarity_threshold
+        )
+        
+        # Log the results
+        logger.info(f"Retrieved {len(similar_docs)} similar documents for query: '{query}'")
+        if len(similar_docs) > 0:
+            avg_similarity = sum(doc["similarity_score"] for doc in similar_docs) / len(similar_docs)
+            logger.info(f"Average similarity score: {avg_similarity:.4f}")
+        
+        return similar_docs
     
-    return ChatResponse(
-        answer=answer,
-        sources=sources
-    )
+    except Exception as e:
+        logger.error(f"Error getting similar documents: {str(e)}")
+        # Return empty list in case of error
+        return []
+
+async def generate_chat_response(
+    query: str,
+    documents: List[Dict[str, Any]],
+    model: Optional[str] = None
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Generate a chat response based on the query and retrieved documents.
+    
+    Parameters:
+    - query: The user's query
+    - documents: The retrieved documents
+    - model: Optional chat model to use
+    
+    Returns:
+    - Tuple of (response_text, sources)
+    """
+    try:
+        # Log request
+        logger.info(f"Generating chat response for query: '{query}'")
+        logger.info(f"Using {len(documents)} context documents")
+        
+        # Generate completion
+        response = await generate_completion(
+            prompt=query,
+            context=documents,
+            model=model or settings.DEFAULT_CHAT_MODEL
+        )
+        
+        # Prepare sources for the response
+        sources = []
+        for doc in documents:
+            sources.append({
+                "ticker": doc["ticker"],
+                "year": doc["year"],
+                "document_type": doc["document_type"],
+                "section": doc.get("section_name", ""),
+                "similarity_score": doc["similarity_score"],
+                "url": doc.get("source_url", "")
+            })
+        
+        # Log response summary
+        logger.info(f"Generated response of length {len(response)} characters")
+        
+        return response, sources
+    
+    except Exception as e:
+        logger.error(f"Error generating chat response: {str(e)}")
+        # Return error message
+        error_message = "I'm sorry, but I encountered an error while generating a response. Please try again."
+        return error_message, []
+
+def create_text_hash(text: str) -> str:
+    """
+    Create a hash of the given text.
+    
+    Parameters:
+    - text: The text to hash
+    
+    Returns:
+    - MD5 hash of the text
+    """
+    return hashlib.md5(text.encode()).hexdigest()

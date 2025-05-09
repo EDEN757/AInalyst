@@ -1,77 +1,37 @@
-from typing import Optional, Literal, Any, Dict
-from pydantic import field_validator, model_validator
+import os
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+from typing import Optional
 
+# Load environment variables from .env file
+load_dotenv()
 
 class Settings(BaseSettings):
-    # Database settings
-    DATABASE_URL: str
-
-    # Application mode (kept for backward compatibility)
-    APP_MODE: Literal["CSV_ONLY"] = "CSV_ONLY"
+    # OpenAI API Configuration
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     
-    # Embedding configuration (used for BOTH documents and queries)
-    EMBEDDING_PROVIDER: Literal["OPENAI", "GEMINI"] = "OPENAI"
-    EMBEDDING_MODEL: str = "text-embedding-ada-002"
-    EMBEDDING_DIMENSION: int = 1536  # Must match the output dimension of the chosen model
+    # SEC EDGAR API Configuration
+    EDGAR_USER_AGENT: str = os.getenv("EDGAR_USER_AGENT", "AInalyst example@youremail.com")
     
-    # Chat generation configuration (used ONLY for final answer generation)
-    CHAT_PROVIDER: Literal["OPENAI", "GEMINI", "CLAUDE"] = "OPENAI"
-    CHAT_MODEL: str = "gpt-3.5-turbo"
+    # PostgreSQL Database Configuration
+    POSTGRES_URI: str = os.getenv("POSTGRES_URI", "postgresql://postgres:postgres@localhost:5432/finance_rag_db")
     
-    # API keys
-    OPENAI_API_KEY: Optional[str] = None
-    GOOGLE_API_KEY: Optional[str] = None
-    ANTHROPIC_API_KEY: Optional[str] = None
+    # Data and Model Configuration
+    COMPANIES_CSV_PATH: str = os.getenv("COMPANIES_CSV_PATH", "./companies.csv")
+    DEFAULT_EMBEDDING_MODEL: str = os.getenv("DEFAULT_EMBEDDING_MODEL", "text-embedding-3-small")
+    EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "1536"))
+    DEFAULT_CHAT_MODEL: str = os.getenv("DEFAULT_CHAT_MODEL", "gpt-3.5-turbo")
     
-    # SEC data fetching
-    SEC_EMAIL: str = "your_email@example.com"
-    SEC_API_KEY: Optional[str] = None
-
-    # Number of chunks to retrieve for RAG
-    RAG_TOP_K: int = 5
+    # API and Logging Configuration
+    API_AUTH_KEY: Optional[str] = os.getenv("API_AUTH_KEY")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     
-    @field_validator("EMBEDDING_DIMENSION")
-    def validate_embedding_dimension(cls, v: int, info: Any) -> int:
-        # Known dimensions for specific models
-        model_dimensions = {
-            "text-embedding-ada-002": 1536,
-            "models/embedding-001": 768,
-            # Add more models as needed
-        }
-        
-        # Get values from the model being validated
-        values = info.data
-        
-        model = values.get("EMBEDDING_MODEL")
-        if model in model_dimensions and v != model_dimensions[model]:
-            raise ValueError(
-                f"EMBEDDING_DIMENSION {v} does not match expected dimension "
-                f"{model_dimensions[model]} for model {model}"
-            )
-        return v
-    
-    @model_validator(mode='after')
-    def validate_api_keys(self) -> 'Settings':
-        """Validate that the appropriate API keys are provided based on providers selected."""
-        
-        # Check if OpenAI API key is provided when OpenAI is used
-        if (self.EMBEDDING_PROVIDER == "OPENAI" or self.CHAT_PROVIDER == "OPENAI") and not self.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY is required when using OpenAI services")
-        
-        # Check if Google API key is provided when Gemini is used
-        if (self.EMBEDDING_PROVIDER == "GEMINI" or self.CHAT_PROVIDER == "GEMINI") and not self.GOOGLE_API_KEY:
-            raise ValueError("GOOGLE_API_KEY is required when using Gemini services")
-        
-        # Check if Anthropic API key is provided when Claude is used
-        if self.CHAT_PROVIDER == "CLAUDE" and not self.ANTHROPIC_API_KEY:
-            raise ValueError("ANTHROPIC_API_KEY is required when using Claude services")
-        
-        return self
+    # API Configuration
+    API_PREFIX: str = "/api/v1"
     
     class Config:
         env_file = ".env"
         case_sensitive = True
 
-
+# Create settings instance
 settings = Settings()

@@ -1,268 +1,438 @@
 import requests
-import time
-import datetime
 import logging
+import time
+import os
+import pandas as pd
+from typing import List, Dict, Any, Optional, Tuple
+from bs4 import BeautifulSoup
 import re
-from typing import List, Dict, Any, Optional
-from app.core.config import settings
+import random
+import json
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
+from ..core.config import settings
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(settings.LOG_LEVEL)
 
-# SEC API constants
-SEC_HEADERS = {
-    'User-Agent': f'S&P500RagBot {settings.SEC_EMAIL}'
+# Constants for SEC EDGAR API
+EDGAR_BASE_URL = "https://www.sec.gov/Archives"
+EDGAR_SEARCH_URL = "https://www.sec.gov/cgi-bin/browse-edgar"
+EDGAR_CIK_LOOKUP_URL = "https://www.sec.gov/edgar/search/efts_cik_lookup_data.json"
+
+# Rate limiting for SEC API
+SEC_REQUEST_DELAY_MIN = 0.1  # 100ms minimum delay
+SEC_REQUEST_DELAY_MAX = 0.3  # 300ms maximum delay
+
+# Common filing types
+FILING_TYPES = {
+    "10-K": "Annual report",
+    "10-K/A": "Annual report amendment",
+    "10-Q": "Quarterly report",
+    "10-Q/A": "Quarterly report amendment",
+    "8-K": "Current report",
+    "8-K/A": "Current report amendment"
 }
-SEC_BASE_URL = "https://data.sec.gov/submissions"
-SEC_API_URL = "https://api.sec.io"
 
-def get_company_submissions(cik: str) -> Dict[str, Any]:
-    """Fetch SEC submission history for a company by CIK.
+# Create a requests session with retry functionality
+def create_sec_session():
+    """Create a requests session with retry functionality for SEC API"""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=0.5,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    session.headers.update({
+        "User-Agent": settings.EDGAR_USER_AGENT,
+        "Accept-Encoding": "gzip, deflate",
+        "Host": "www.sec.gov"
+    })
+    return session
+
+# CIK lookup cache to avoid repeated lookups
+CIK_LOOKUP_CACHE = {}
+
+def lookup_cik(ticker: str) -> Optional[str]:
+    """
+    Look up the CIK number for a ticker symbol.
     
-    Args:
-        cik: Company CIK number (with or without leading zeros)
+    Parameters:
+    - ticker: The company ticker symbol
     
     Returns:
-        Dictionary with company submission data
-        
-    Raises:
-        Exception: If there's an error fetching the data
+    - CIK number as a string or None if not found
     """
-    # Ensure CIK is properly formatted (10 digits with leading zeros)
-    cik = cik.lstrip('0')
-    padded_cik = cik.zfill(10)
-    
-    url = f"{SEC_BASE_URL}/CIK{padded_cik}.json"
+    # Check cache first
+    if ticker in CIK_LOOKUP_CACHE:
+        return CIK_LOOKUP_CACHE[ticker]
     
     try:
-        response = requests.get(url, headers=SEC_HEADERS)
-        response.raise_for_status()  # Raise exception for HTTP errors
+        logger.info(f"Looking up CIK for ticker: {ticker}")
         
-        # Respect SEC API rate limits (10 requests per second)
-        time.sleep(0.1)
+        # Create a session for SEC API
+        session = create_sec_session()
         
-        return response.json()
-    
-    except Exception as e:
-        logger.error(f"Error fetching submissions for CIK {cik}: {str(e)}")
-        raise
-
-def lookup_company_cik_from_sec(symbol: str) -> Optional[str]:
-    """Look up a company's CIK number directly from SEC.
-    
-    Args:
-        symbol: Company stock symbol (e.g., "AAPL")
+        # Make request to CIK lookup endpoint
+        response = session.get(EDGAR_CIK_LOOKUP_URL)
         
-    Returns:
-        CIK number as a string, or None if not found
-    """
-    try:
-        # Use the SEC's ticker-to-CIK mapping endpoint
-        url = "https://www.sec.gov/files/company_tickers.json"
-        response = requests.get(url, headers=SEC_HEADERS)
-        response.raise_for_status()
+        # Apply rate limiting delay
+        time.sleep(random.uniform(SEC_REQUEST_DELAY_MIN, SEC_REQUEST_DELAY_MAX))
         
-        # Respect SEC rate limits
-        time.sleep(0.1)
+        # Check response status
+        if response.status_code != 200:
+            logger.error(f"Error looking up CIK: {response.status_code} - {response.text}")
+            return None
         
-        # The SEC returns a JSON object with numeric keys
-        companies_data = response.json()
+        # Parse JSON response
+        data = response.json()
         
-        # Convert to list for easier searching
-        companies_list = [companies_data[str(key)] for key in companies_data]
-        
-        # Find matching ticker (case-insensitive)
-        for company in companies_list:
-            if company.get('ticker', '').upper() == symbol.upper():
-                # Format CIK as a string with leading zeros (10 digits)
-                cik = str(company.get('cik_str', '')).zfill(10)
-                logger.info(f"Found CIK {cik} for {symbol} via SEC API")
-                return cik
+        # Search for ticker in the data
+        for entry in data.get('data', []):
+            if entry[0].upper() == ticker.upper():
+                cik = entry[1]
+                # Add leading zeros to make it 10 digits
+                cik_padded = cik.zfill(10)
                 
-        logger.warning(f"Could not find CIK for {symbol} via SEC API")
-        return None
+                # Add to cache
+                CIK_LOOKUP_CACHE[ticker] = cik_padded
+                
+                logger.info(f"Found CIK for {ticker}: {cik_padded}")
+                return cik_padded
         
+        logger.warning(f"CIK not found for ticker: {ticker}")
+        return None
+    
     except Exception as e:
-        logger.error(f"Error looking up CIK for {symbol}: {str(e)}")
+        logger.error(f"Error looking up CIK: {str(e)}")
         return None
 
-def get_10k_filing_url(cik: str, accession_number: str, primary_doc: str) -> str:
-    """Construct the SEC filing URL for a 10-K document.
-    
-    Args:
-        cik: Company CIK number (without leading zeros)
-        accession_number: SEC accession number
-        primary_doc: Primary document filename
-        
-    Returns:
-        Full URL to the SEC filing
+def get_sec_filings(ticker: str, year: int, filing_type: str = "10-K") -> List[Dict[str, Any]]:
     """
-    # Format accession number by removing dashes
-    accession_clean = accession_number.replace('-', '')
+    Get SEC filings for a specific ticker, year, and filing type.
     
-    # Construct the URL to the filing
-    return f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_clean}/{primary_doc}"
-
-def extract_10k_filings(submissions_data: Dict[str, Any], start_date: str, end_date: str, limit: int = 10) -> List[Dict[str, Any]]:
-    """Extract 10-K filings from SEC submission data within a date range.
+    Parameters:
+    - ticker: The company ticker symbol
+    - year: The year of the filing
+    - filing_type: The type of filing (default: 10-K)
     
-    Args:
-        submissions_data: SEC submission data for a company
-        start_date: Start date in ISO format (YYYY-MM-DD)
-        end_date: End date in ISO format (YYYY-MM-DD)
-        limit: Maximum number of filings to extract
-        
     Returns:
-        List of dictionaries with 10-K filing information
+    - List of filings with metadata
     """
-    filings = []
-    recent_filings = submissions_data.get('filings', {}).get('recent', {})
+    logger.info(f"Fetching {filing_type} filings for {ticker} for year {year}")
     
-    # Check if we have the necessary data
-    if not recent_filings:
-        logger.warning(f"No recent filings data found for this company")
+    try:
+        # Create a session for SEC API
+        session = create_sec_session()
+        
+        # Lookup CIK if ticker is not already a CIK
+        cik = ticker
+        if not ticker.isdigit():
+            cik = lookup_cik(ticker)
+            if not cik:
+                logger.error(f"Could not find CIK for {ticker}")
+                return []
+        
+        # Calculate date range for the year
+        start_date = f"{year}0101"
+        end_date = f"{year}1231"
+        
+        # Build request params
+        params = {
+            "action": "getcompany",
+            "CIK": cik,
+            "type": filing_type,
+            "dateb": end_date,
+            "datea": start_date,
+            "owner": "exclude",
+            "count": "100",
+            "output": "atom"
+        }
+        
+        # Make request to SEC EDGAR
+        response = session.get(EDGAR_SEARCH_URL, params=params)
+        
+        # Apply rate limiting delay
+        time.sleep(random.uniform(SEC_REQUEST_DELAY_MIN, SEC_REQUEST_DELAY_MAX))
+        
+        # Check response status
+        if response.status_code != 200:
+            logger.error(f"Error fetching SEC filings: {response.status_code} - {response.text}")
+            return []
+        
+        # Parse XML response
+        soup = BeautifulSoup(response.content, "lxml-xml")
+        entries = soup.find_all("entry")
+        
+        # Process entries
+        filings = []
+        for entry in entries:
+            try:
+                # Get filing date
+                filing_date = entry.find("filing-date")
+                if filing_date:
+                    filing_date = filing_date.text
+                else:
+                    filing_date = entry.find("updated").text.split("T")[0]
+                
+                # Get filing URL
+                filing_href = None
+                for link in entry.find_all("link"):
+                    if link.get("rel") == "alternate":
+                        filing_href = link.get("href")
+                        break
+                
+                if not filing_href:
+                    continue
+                
+                # Get accession number from URL
+                accession_number = None
+                accession_match = re.search(r'/(\d{10}-\d{2}-\d{6})', filing_href)
+                if accession_match:
+                    accession_number = accession_match.group(1)
+                else:
+                    accession_number = filing_href.split("/")[-1]
+                
+                # Get filing details URL
+                cik_no_leading_zeros = cik.lstrip('0')
+                filing_details_url = f"{EDGAR_BASE_URL}/edgar/data/{cik_no_leading_zeros}/{accession_number.replace('-', '')}"
+                
+                # Get title and description
+                title = entry.find("title")
+                title_text = title.text if title else f"{filing_type} for {ticker}"
+                
+                summary = entry.find("summary")
+                summary_text = summary.text if summary else None
+                
+                # Get category information
+                category = entry.find("category")
+                category_term = category.get("term") if category else None
+                category_label = category.get("label") if category else None
+                
+                # Add to filings list
+                filings.append({
+                    "ticker": ticker,
+                    "cik": cik,
+                    "year": year,
+                    "filing_type": filing_type,
+                    "filing_date": filing_date,
+                    "accession_number": accession_number,
+                    "filing_details_url": filing_details_url,
+                    "title": title_text,
+                    "summary": summary_text,
+                    "category_term": category_term,
+                    "category_label": category_label
+                })
+            except Exception as e:
+                logger.warning(f"Error processing entry: {str(e)}")
+                continue
+        
+        logger.info(f"Found {len(filings)} {filing_type} filings for {ticker} for year {year}")
         return filings
     
-    # Convert date strings to datetime objects for comparison
-    start_dt = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
-    end_dt = datetime.datetime.strptime(end_date, '%Y-%m-%d').date()
-    
-    # Get the indices of the specified filing type
-    form_types = recent_filings.get('form', [])
-    accession_numbers = recent_filings.get('accessionNumber', [])
-    filing_dates = recent_filings.get('filingDate', [])
-    primary_doc_urls = recent_filings.get('primaryDocument', [])
-    filing_count = len(form_types)
-    
-    logger.info(f"Found {filing_count} filings in recent data, looking for 10-K")
-    
-    # Extract 10-K filings within the date range
-    count = 0
-    for i in range(filing_count):
-        if form_types[i] == '10-K' and count < limit:
-            try:
-                filing_date_str = filing_dates[i]
-                filing_date = datetime.datetime.strptime(filing_date_str, '%Y-%m-%d').date()
-                
-                # Check if filing is within date range
-                if start_dt <= filing_date <= end_dt:
-                    fiscal_year = filing_date.year
-                    
-                    # Extract the primary document URL
-                    accession_num = accession_numbers[i]
-                    primary_doc = primary_doc_urls[i]
-                    cik = submissions_data.get('cik')
-                    
-                    # Construct the filing URL
-                    filing_url = get_10k_filing_url(cik, accession_num, primary_doc)
-                    
-                    filings.append({
-                        'accession_number': accession_num,
-                        'filing_type': '10-K',
-                        'filing_date': datetime.datetime.strptime(filing_date_str, '%Y-%m-%d'),
-                        'filing_url': filing_url,
-                        'fiscal_year': fiscal_year,
-                        'fiscal_period': 'FY'
-                    })
-                    
-                    count += 1
-                    logger.info(f"Found 10-K filing from {filing_date_str} - URL: {filing_url}")
-            except Exception as e:
-                logger.error(f"Error processing filing {accession_numbers[i]}: {str(e)}")
-    
-    logger.info(f"Extracted {len(filings)} 10-K filings within date range")
-    return filings
+    except Exception as e:
+        logger.error(f"Error fetching SEC filings: {str(e)}")
+        return []
 
-def fetch_filing_document(filing_url: str) -> Optional[str]:
-    """Fetch the actual filing document text.
+def get_filing_document_url(filing_details_url: str, session: Optional[requests.Session] = None) -> Optional[str]:
+    """
+    Get the URL for the actual filing document.
     
-    Args:
-        filing_url: URL to the filing document
+    Parameters:
+    - filing_details_url: The URL for the filing details page
+    - session: Optional requests session (creates a new one if None)
     
     Returns:
-        Text content of the filing or None if there was an error
+    - URL for the actual filing document (HTML or TXT)
     """
     try:
-        response = requests.get(filing_url, headers=SEC_HEADERS)
-        response.raise_for_status()
+        # Create or use a session for SEC API
+        if session is None:
+            session = create_sec_session()
         
-        # Respect SEC API rate limits
-        time.sleep(0.1)
+        # Make request to filing details page
+        response = session.get(filing_details_url)
         
+        # Apply rate limiting delay
+        time.sleep(random.uniform(SEC_REQUEST_DELAY_MIN, SEC_REQUEST_DELAY_MAX))
+        
+        # Check response status
+        if response.status_code != 200:
+            logger.error(f"Error fetching filing details: {response.status_code} - {response.text}")
+            return None
+        
+        # Parse HTML response
+        soup = BeautifulSoup(response.content, "html.parser")
+        
+        # Look for the 10-K/10-K/A HTML file
+        for table in soup.find_all("table"):
+            for row in table.find_all("tr"):
+                cells = row.find_all("td")
+                if len(cells) >= 3:
+                    cell_text = cells[2].get_text().strip()
+                    if "10-K" in cell_text and ("htm" in cell_text.lower() or "html" in cell_text.lower()):
+                        # Get the document URL
+                        doc_link = cells[2].find("a")
+                        if doc_link and doc_link.has_attr("href"):
+                            doc_url = f"{EDGAR_BASE_URL}{doc_link['href']}"
+                            return doc_url
+        
+        # If HTML not found, look for the TXT file
+        for table in soup.find_all("table"):
+            for row in table.find_all("tr"):
+                cells = row.find_all("td")
+                if len(cells) >= 3:
+                    cell_text = cells[2].get_text().strip()
+                    if "10-K" in cell_text and "txt" in cell_text.lower():
+                        # Get the document URL
+                        doc_link = cells[2].find("a")
+                        if doc_link and doc_link.has_attr("href"):
+                            doc_url = f"{EDGAR_BASE_URL}{doc_link['href']}"
+                            return doc_url
+        
+        logger.warning(f"Could not find 10-K document in filing details: {filing_details_url}")
+        return None
+    
+    except Exception as e:
+        logger.error(f"Error fetching filing document: {str(e)}")
+        return None
+
+def download_filing_document(document_url: str, session: Optional[requests.Session] = None) -> Optional[str]:
+    """
+    Download the filing document content.
+    
+    Parameters:
+    - document_url: The URL for the filing document
+    - session: Optional requests session (creates a new one if None)
+    
+    Returns:
+    - The document content as a string
+    """
+    try:
+        # Create or use a session for SEC API
+        if session is None:
+            session = create_sec_session()
+        
+        # Make request to document URL
+        response = session.get(document_url)
+        
+        # Apply rate limiting delay
+        time.sleep(random.uniform(SEC_REQUEST_DELAY_MIN, SEC_REQUEST_DELAY_MAX))
+        
+        # Check response status
+        if response.status_code != 200:
+            logger.error(f"Error downloading document: {response.status_code} - {response.text}")
+            return None
+        
+        # Return document content
         return response.text
     
     except Exception as e:
-        logger.error(f"Error fetching filing document {filing_url}: {str(e)}")
+        logger.error(f"Error downloading document: {str(e)}")
         return None
 
-def fetch_company_10k_filings(symbol: str, cik: str = None, start_date: str = None, end_date: str = None) -> Dict[str, List]:
-    """Fetch 10-K filings for a company within a date range.
-    
-    Args:
-        symbol: Company ticker symbol (e.g., "AAPL")
-        cik: Company CIK number (optional, will be looked up if not provided)
-        start_date: Start date in ISO format (default: 3 years ago)
-        end_date: End date in ISO format (default: today)
-        
-    Returns:
-        Dictionary with companies and filings lists
+def fetch_filings_for_company(ticker: str, start_year: int, end_year: int, filing_types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """
-    results = {
-        'companies': [],
-        'filings': []
-    }
+    Fetch SEC filings for a company over a range of years.
     
-    # Set default date range if not provided
-    if not start_date:
-        start_date = (datetime.datetime.now() - datetime.timedelta(days=3*365)).strftime('%Y-%m-%d')
-    if not end_date:
-        end_date = datetime.datetime.now().strftime('%Y-%m-%d')
+    Parameters:
+    - ticker: The company ticker symbol
+    - start_year: Start year for fetching filings
+    - end_year: End year for fetching filings
+    - filing_types: List of filing types to fetch (defaults to ["10-K", "10-K/A"])
     
-    logger.info(f"Fetching 10-K filings for {symbol} from {start_date} to {end_date}")
+    Returns:
+    - List of filings with metadata and document content
+    """
+    # Set default filing types if not provided
+    if filing_types is None:
+        filing_types = ["10-K", "10-K/A"]
     
-    try:
-        # Look up the company's CIK if not provided
-        if not cik:
-            cik = lookup_company_cik_from_sec(symbol)
-            if not cik:
-                logger.error(f"Could not find CIK for {symbol}. Cannot fetch filings.")
-                return results
-        
-        # Get company submissions data
-        logger.info(f"Fetching submissions data for {symbol} (CIK: {cik})")
-        submissions = get_company_submissions(cik)
-        
-        # Extract company name from submissions
-        company_name = submissions.get('name', symbol)
-        
-        # Add company to results
-        results['companies'].append({
-            'symbol': symbol,
-            'name': company_name,
-            'cik': cik
-        })
-        
-        # Extract 10-K filings within date range
-        filings = extract_10k_filings(submissions, start_date, end_date)
-        
-        # Format filings for the results
-        for filing in filings:
-            results['filings'].append({
-                'company_symbol': symbol,
-                'company_name': company_name,
-                'company_cik': cik,
-                'accession_number': filing['accession_number'],
-                'filing_type': filing['filing_type'],
-                'filing_date': filing['filing_date'],
-                'filing_url': filing['filing_url'],
-                'fiscal_year': filing['fiscal_year'],
-                'fiscal_period': filing['fiscal_period']
-            })
-        
-        logger.info(f"Found {len(results['filings'])} 10-K filings for {symbol}")
-        
-    except Exception as e:
-        logger.error(f"Error fetching 10-K filings for {symbol}: {str(e)}")
+    logger.info(f"Fetching {', '.join(filing_types)} filings for {ticker} from {start_year} to {end_year}")
     
-    return results
+    # Create a session for SEC API
+    session = create_sec_session()
+    
+    # Fetch filings for each year and filing type
+    all_filings = []
+    for year in range(start_year, end_year + 1):
+        for filing_type in filing_types:
+            # Get filings metadata
+            filings = get_sec_filings(ticker, year, filing_type)
+            
+            # Skip if no filings found
+            if not filings:
+                continue
+            
+            # Get document URL and content for each filing
+            for filing in filings:
+                try:
+                    # Get document URL
+                    document_url = get_filing_document_url(filing["filing_details_url"], session)
+                    if not document_url:
+                        logger.warning(f"Could not find document URL for {ticker} {year} {filing_type}")
+                        continue
+                    
+                    # Add document URL to filing metadata
+                    filing["document_url"] = document_url
+                    
+                    # Add to all filings list
+                    all_filings.append(filing)
+                except Exception as e:
+                    logger.error(f"Error processing filing: {str(e)}")
+                    continue
+    
+    logger.info(f"Fetched {len(all_filings)} filings for {ticker} from {start_year} to {end_year}")
+    
+    return all_filings
+
+def download_filing_contents(filings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Download the document content for each filing.
+    
+    Parameters:
+    - filings: List of filings with metadata
+    
+    Returns:
+    - List of filings with metadata and document content
+    """
+    # Create a session for SEC API
+    session = create_sec_session()
+    
+    # Download document content for each filing
+    filings_with_content = []
+    for filing in filings:
+        try:
+            # Skip if no document URL
+            if "document_url" not in filing:
+                logger.warning(f"No document URL for filing: {filing.get('ticker')} {filing.get('year')} {filing.get('filing_type')}")
+                continue
+            
+            # Download document content
+            document_content = download_filing_document(filing["document_url"], session)
+            if not document_content:
+                logger.warning(f"Could not download document content for filing: {filing.get('ticker')} {filing.get('year')} {filing.get('filing_type')}")
+                continue
+            
+            # Add document content to filing metadata
+            filing["document_content"] = document_content
+            
+            # Add to filings with content list
+            filings_with_content.append(filing)
+        except Exception as e:
+            logger.error(f"Error downloading filing content: {str(e)}")
+            continue
+    
+    logger.info(f"Downloaded document content for {len(filings_with_content)} filings")
+    
+    return filings_with_content

@@ -1,55 +1,70 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Text, Float, Boolean, DateTime, func
-from sqlalchemy.orm import relationship
-from pgvector.sqlalchemy import Vector
-
+from sqlalchemy import Column, String, Integer, Date, Text, DateTime, ForeignKey, UniqueConstraint, Index
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY, FLOAT
+from sqlalchemy.sql import func
 from ..db.database import Base
-from ..core.config import settings
 
+class FilingMetadata(Base):
+    """SQLAlchemy model for filings_metadata table."""
+    __tablename__ = "filings_metadata"
+    
+    doc_id = Column(String(255), primary_key=True, index=True)
+    ticker = Column(String(10), nullable=False, index=True)
+    year = Column(Integer, nullable=False, index=True)
+    document_type = Column(String(10), default="10-K", index=True)
+    filing_date = Column(Date, index=True)
+    section_name = Column(Text, index=True)
+    source_url = Column(Text)
+    page_number = Column(Integer)
+    embedding_model = Column(String(50))
+    text_hash = Column(String(32), nullable=False, index=True)
+    ingested_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    __table_args__ = (
+        UniqueConstraint('ticker', 'year', 'document_type', 'section_name', 'text_hash', name='unique_filing_chunk'),
+        Index('idx_filings_metadata_ticker_year', 'ticker', 'year'),
+        Index('idx_filings_metadata_ticker_year_type', 'ticker', 'year', 'document_type'),
+    )
 
-class Company(Base):
-    __tablename__ = "companies"
+class DocumentVector(Base):
+    """SQLAlchemy model for document_vectors table."""
+    __tablename__ = "document_vectors"
+    
+    doc_id = Column(String(255), ForeignKey("filings_metadata.doc_id", ondelete="CASCADE"), primary_key=True)
+    # Note: We're using ARRAY(FLOAT) here as a placeholder
+    # The actual pgvector type is handled by the database
+    embedding = Column(ARRAY(FLOAT(precision=53)), nullable=False)
+    
+    # Define table arguments for pgvector index
+    # This is commented out here because the index is created in the SQL migration script
+    # __table_args__ = (
+    #     Index('idx_hnsw_embedding', 'embedding', postgresql_using='hnsw', postgresql_with={'m': 16, 'ef_construction': 64}),
+    # )
+
+class DocumentChunk(Base):
+    """SQLAlchemy model for document_chunks table to store the actual text content."""
+    __tablename__ = "document_chunks"
+    
+    doc_id = Column(String(255), ForeignKey("filings_metadata.doc_id", ondelete="CASCADE"), primary_key=True)
+    chunk_text = Column(Text, nullable=False)
+    chunk_number = Column(Integer)
+    total_chunks = Column(Integer)
+    
+    __table_args__ = (
+        Index('idx_document_chunks_doc_id', 'doc_id'),
+    )
+
+class ChatHistory(Base):
+    """SQLAlchemy model for chat_history table."""
+    __tablename__ = "chat_history"
     
     id = Column(Integer, primary_key=True, index=True)
-    symbol = Column(String, unique=True, index=True)
-    name = Column(String)
-    sector = Column(String)
-    industry = Column(String)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    session_id = Column(String(255), nullable=False, index=True)
+    user_message = Column(Text, nullable=False)
+    assistant_message = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    metadata = Column(JSONB)
     
-    filings = relationship("Filing", back_populates="company")
-
-
-class Filing(Base):
-    __tablename__ = "filings"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id"))
-    filing_type = Column(String)  # 10-K, 10-Q, etc.
-    filing_date = Column(DateTime)
-    filing_url = Column(String)
-    accession_number = Column(String, unique=True, index=True)
-    fiscal_year = Column(Integer)
-    fiscal_period = Column(String)  # Q1, Q2, Q3, Q4, FY
-    processed = Column(Boolean, default=False)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-    
-    company = relationship("Company", back_populates="filings")
-    chunks = relationship("TextChunk", back_populates="filing")
-
-
-class TextChunk(Base):
-    __tablename__ = "text_chunks"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    filing_id = Column(Integer, ForeignKey("filings.id"))
-    chunk_index = Column(Integer)  # To maintain order
-    text_content = Column(Text)
-    section = Column(String)  # e.g., "Item 1. Business", "Item 1A. Risk Factors", etc.
-    page_number = Column(Integer, nullable=True)
-    embedded = Column(Boolean, default=False)  # Flag to track if this chunk has an embedding
-    embedding = Column(Vector(settings.EMBEDDING_DIMENSION), nullable=True)  # Vector embedding of chunk
-    created_at = Column(DateTime, server_default=func.now())
-    
-    filing = relationship("Filing", back_populates="chunks")
+    __table_args__ = (
+        Index('idx_chat_history_session_id_created_at', 'session_id', 'created_at'),
+    )

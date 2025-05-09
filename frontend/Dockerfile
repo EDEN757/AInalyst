@@ -1,29 +1,21 @@
-FROM node:16-alpine
-
-# Create a non-root user and group
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+FROM node:18-alpine
 
 WORKDIR /app
 
-# Set environment variable for API connection with fallbacks
-ENV REACT_APP_API_URL http://host.docker.internal:8000
-
 # Copy package.json and package-lock.json
-COPY package.json package-lock.json* ./
+COPY package*.json ./
 
 # Install dependencies
 RUN npm install
 
-# Copy the rest of the frontend code
+# Copy the rest of the application
 COPY . .
 
-# Create .cache directory and grant permissions
-RUN mkdir -p node_modules/.cache && \
-    chmod -R 777 node_modules/ && \
-    chown -R appuser:appgroup /app
+# Build the application
+RUN npm run build
 
-# Switch to non-root user
-USER appuser
+# Expose port
+EXPOSE 3000
 
-# Start the app
+# Start the application
 CMD ["npm", "start"]
