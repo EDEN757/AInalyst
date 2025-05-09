@@ -6,12 +6,9 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [newSymbol, setNewSymbol] = useState('');
-  const [filingLimit, setFilingLimit] = useState(2);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [filings, setFilings] = useState([]);
   const [isFirstVisit, setIsFirstVisit] = useState(true);
-  const [processingCompany, setProcessingCompany] = useState(null);
   const [csvImporting, setCsvImporting] = useState(false);
 
   // Fetch companies on component mount
@@ -72,45 +69,6 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
     fetchFilings(company.symbol);
   };
 
-  const handleAddCompany = async (e) => {
-    e.preventDefault();
-    
-    if (!newSymbol.trim()) return;
-    
-    setLoading(true);
-    setError(null);
-    setProcessingCompany(newSymbol);
-    
-    try {
-      const response = await axios.post(`${apiUrl}/api/v1/companies/add`, {
-        symbol: newSymbol.toUpperCase(),
-        filing_limit: filingLimit
-      });
-      
-      console.log('Add company response:', response.data);
-      
-      // Show success message based on response
-      if (response.data.status === 'success') {
-        alert(`Company ${newSymbol.toUpperCase()} already exists!`);
-      } else if (response.data.status === 'processing') {
-        alert(`Adding ${newSymbol.toUpperCase()} to the database (processing in background). Please check back in a minute.`);
-      }
-      
-      // Clear the form
-      setNewSymbol('');
-      
-      // Refresh companies list after a short delay
-      setTimeout(fetchCompanies, 3000);
-      
-    } catch (error) {
-      console.error('Error adding company:', error);
-      setError('Error adding company. Please try again later.');
-    } finally {
-      setLoading(false);
-      setProcessingCompany(null);
-    }
-  };
-
   const handleDeleteCompany = async (symbol) => {
     if (!window.confirm(`Are you sure you want to delete ${symbol} and all its data?`)) {
       return;
@@ -139,29 +97,6 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
       setLoading(false);
     }
   };
-
-  const handleAddDemoCompanies = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const response = await axios.post(`${apiUrl}/api/v1/companies/add-demo`, {
-        enabled: true
-      });
-      
-      console.log('Add demo companies response:', response.data);
-      alert('Adding demo companies (AAPL, MSFT, GOOGL). Please check back in a minute.');
-      
-      // Refresh companies list after a short delay
-      setTimeout(fetchCompanies, 3000);
-      
-    } catch (error) {
-      console.error('Error adding demo companies:', error);
-      setError('Error adding demo companies. Please try again later.');
-    } finally {
-      setLoading(false);
-    }
-  };
   
   const handleImportFromCsv = async () => {
     setLoading(true);
@@ -175,7 +110,7 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
       console.log('CSV import response:', response.data);
       
       if (response.data.status === 'processing') {
-        alert(`Importing ${response.data.companies.length} companies from CSV. Processing in background. Please check back in a few minutes.`);
+        alert(`Importing ${response.data.companies.length} queries from CSV. Processing in background. Please check back in a few minutes.`);
       }
       
       // Refresh companies list after a short delay
@@ -233,17 +168,19 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
         <div className="onboarding-prompt">
           <h3>Welcome to AInalyst!</h3>
           <p>To get started, you need to add companies to your database.</p>
-          <p>You can either:</p>
+          <p>Use the CSV import feature to add companies and filings:</p>
           <ul>
-            <li>Load demo companies (Apple, Microsoft, Google) to explore the app quickly</li>
-            <li>Add specific companies by entering their ticker symbols</li>
+            <li>Download the CSV template</li>
+            <li>Edit it to include the companies and filing types you want</li>
+            <li>Place it in the project root</li>
+            <li>Import it using the button below</li>
           </ul>
           <button 
             className="button primary" 
-            onClick={handleAddDemoCompanies}
+            onClick={handleDownloadTemplate}
             disabled={loading}
           >
-            Load Demo Companies
+            Download CSV Template
           </button>
         </div>
       )}
@@ -258,13 +195,13 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
           {!loading && !error && companies.length === 0 && (
             <div className="empty-state">
               <p>No companies found in the database.</p>
-              <p>Add companies using the form or load demo companies.</p>
+              <p>Add companies using the CSV import feature.</p>
               <button 
                 className="button secondary" 
-                onClick={handleAddDemoCompanies}
+                onClick={handleDownloadTemplate}
                 disabled={loading}
               >
-                Load Demo Companies
+                Download CSV Template
               </button>
             </div>
           )}
@@ -309,57 +246,29 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
             </div>
           )}
           
-          <div className="add-company-form">
-            <h4>Add New Company</h4>
-            <form onSubmit={handleAddCompany}>
-              <div className="form-group">
-                <label htmlFor="newSymbol">Ticker Symbol:</label>
-                <input
-                  type="text"
-                  id="newSymbol"
-                  value={newSymbol}
-                  onChange={(e) => setNewSymbol(e.target.value)}
-                  placeholder="e.g., AAPL"
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="filingLimit">Number of 10-Ks:</label>
-                <select
-                  id="filingLimit"
-                  value={filingLimit}
-                  onChange={(e) => setFilingLimit(Number(e.target.value))}
+          <div className="csv-import-section">
+            <h4>Import Companies from CSV</h4>
+            <div className="csv-info">
+              <p>Import companies defined in the project's CSV file</p>
+              <div className="csv-actions">
+                <button 
+                  onClick={handleDownloadTemplate} 
+                  className="button secondary"
                   disabled={loading}
                 >
-                  <option value="1">1 (Latest)</option>
-                  <option value="2">2 (Last two years)</option>
-                  <option value="3">3 (Last three years)</option>
-                  <option value="5">5 (Last five years)</option>
-                </select>
-              </div>
-              <button 
-                type="submit" 
-                className="button primary"
-                disabled={loading || !newSymbol.trim()}
-              >
-                {loading && processingCompany === newSymbol ? 'Adding...' : 'Add Company'}
-              </button>
-            </form>
-            
-            <div className="csv-import-section">
-              <h4>Import Companies from CSV</h4>
-              <div className="csv-info">
-                <p>Import companies defined in the project's CSV file</p>
-                <p><strong>Note:</strong> Edit companies_to_import.csv in the project root to add companies</p>
+                  Download Template
+                </button>
                 <button 
                   onClick={handleImportFromCsv} 
                   className="button primary"
                   disabled={loading}
                 >
-                  {csvImporting ? 'Importing...' : 'Download from CSV'}
+                  {csvImporting ? 'Importing...' : 'Import from CSV'}
                 </button>
               </div>
+              <p><strong>Note:</strong> Edit companies_to_import.csv in the project root to add companies</p>
+              <p><strong>CSV Format:</strong> ticker,doc_type,date_range</p>
+              <p><strong>Example:</strong> AAPL,10-K,2020-01-01,2025-12-31</p>
             </div>
           </div>
         </div>

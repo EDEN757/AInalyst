@@ -218,26 +218,29 @@ docker-compose exec backend python /app/data_updater/update_job.py --skip-embedd
 
 ### Importing Companies via CSV
 
-You can import multiple companies at once by editing the `companies_to_import.csv` file in the project root directory and clicking "Download from CSV" in the Company Management interface.
+You can import multiple companies at once by editing the `companies_to_import.csv` file in the project root directory and clicking "Import from CSV" in the Company Management interface.
 
 The CSV file must have this format:
 ```
-ticker,num_10ks
-AAPL,2
-MSFT,3
-JPM,1
+ticker,doc_type,date_range
+AAPL,10-K,2020-01-01,2025-12-31
+MSFT,10-Q,2022-01-01,2022-12-31
+GOOGL,8-K,2023-01-01,2023-12-31
 ```
 
 **Column Definitions:**
 - `ticker`: The company's stock ticker symbol (e.g., AAPL for Apple)
-- `num_10ks`: Number of 10-K filings to download (1-5)
+- `doc_type`: Type of SEC filing to download (e.g., 10-K, 10-Q, 8-K)
+- `date_range`: Start and end dates in ISO format (YYYY-MM-DD) separated by comma
 
 **Important Notes:**
-- Keep the header row (`ticker,num_10ks`) in your CSV
+- Keep the header row (`ticker,doc_type,date_range`) in your CSV
 - Ticker symbols are case-insensitive
-- Companies already in the database will be skipped
+- Supported document types include 10-K, 10-Q, 8-K and their amended versions (10-K/A, etc.)
+- Date ranges should be in ISO format (YYYY-MM-DD) and represent the filing date range to search
 - Edit `companies_to_import.csv` in the project root to add the companies you want
 - Processing happens in the background - check back later to see imported companies
+- You can download a template by clicking "Download Template" in the Company Management interface
 
 ## Custom Configuration
 
