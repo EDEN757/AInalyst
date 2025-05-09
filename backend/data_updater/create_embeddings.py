@@ -83,8 +83,8 @@ async def create_embeddings_batch(chunks: List[Dict[str, Any]]) -> List[Dict[str
     # Extract texts for batched embedding
     texts = [chunk["chunk_text"] for chunk in chunks]
 
-    # Create embeddings in batch
-    embeddings = await llm_create_embeddings_batch(
+    # Create embeddings in batch (using synchronous function without await)
+    embeddings = llm_create_embeddings_batch(
         texts=texts,
         model=settings.DEFAULT_EMBEDDING_MODEL
     )
