@@ -138,7 +138,15 @@ This separation allows you to optimize for different use cases:
       ANTHROPIC_API_KEY=your_anthropic_key
       ```
 
-   d. **Database Settings**:
+   d. **SEC Settings**:
+      ```
+      SEC_EMAIL=youremail@example.com
+      # Optional: For using SEC API to query multiple filing types
+      # Get your key from https://sec-api.io
+      SEC_API_KEY=your_sec_api_key_here
+      ```
+
+   e. **Database Settings**:
       ```
       DATABASE_URL=postgresql://postgres:postgres@db:5432/sp500_db
       POSTGRES_USER=postgres
@@ -146,7 +154,7 @@ This separation allows you to optimize for different use cases:
       POSTGRES_DB=sp500_db
       ```
 
-   e. **Application Configuration**:
+   f. **Application Configuration**:
       ```
       # This setting is now used for internal processing, not for enabling/disabling demo mode
       APP_MODE=FULL

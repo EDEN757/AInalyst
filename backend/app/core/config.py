@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     
     # SEC data fetching
     SEC_EMAIL: str = "your_email@example.com"
-    
+    SEC_API_KEY: Optional[str] = None
+
     # Number of chunks to retrieve for RAG
     RAG_TOP_K: int = 5
     
