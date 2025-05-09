@@ -1,6 +1,6 @@
 # AInalyst
 
-A Retrieval-Augmented Generation (RAG) chatbot that enables users to query information from the 10-K filings of S&P 500 companies using natural language.
+A Retrieval-Augmented Generation (RAG) chatbot that enables users to query information from SEC filings of companies using natural language.
 
 ## Project Structure
 
@@ -55,7 +55,6 @@ AInalyst/
 ├── postgres/
 │   └── init.sql                    # pgvector extension setup
 ├── companies_to_import.csv         # CSV file with companies to import
-├── .env.example                    # Example environment variables
 ├── docker-compose.yml              # Container orchestration
 ├── LICENSE                         # MIT License
 └── README.md                       # This file
@@ -82,9 +81,9 @@ This separation allows you to optimize for different use cases:
 - **Configurable Models**: Set different providers and models for embedding vs. chat generation
 - **Interactive Chat Interface**: React-based UI with filtering by company and year
 - **Company Management Interface**: Add, view, and delete companies directly through the UI
-- **Document Processing Pipeline**: Fetches, extracts, chunks, and embeds 10-K filings
+- **Document Processing Pipeline**: Fetches, extracts, chunks, and embeds SEC filings
+- **CSV Import**: Import companies from a CSV file
 - **Containerized Architecture**: Everything runs in Docker containers for easy deployment
-- **Demo Companies**: Easily load sample companies (Apple, Microsoft, Google) to explore the system
 
 ## Technology Stack
 
@@ -121,7 +120,7 @@ This separation allows you to optimize for different use cases:
    a. **Embedding Configuration** (Used for BOTH documents and queries):
       ```
       EMBEDDING_PROVIDER=OPENAI
-      EMBEDDING_MODEL=text-embedding-ada-002
+      EMBEDDING_MODEL=text-embedding-3-small
       EMBEDDING_DIMENSION=1536
       ```
 
@@ -156,7 +155,7 @@ This separation allows you to optimize for different use cases:
 
    f. **Application Configuration**:
       ```
-      # This setting is now used for internal processing, not for enabling/disabling demo mode
+      # Application mode
       APP_MODE=FULL
       ```
 
@@ -169,33 +168,62 @@ This separation allows you to optimize for different use cases:
    docker-compose up --build -d
    ```
 
-2. Access the application - no initial setup needed:
-   
-   When you first access the application, you'll be prompted to add companies to the database:
-   - You can use the "Load Demo Companies" button to quickly add Apple, Microsoft, and Google
-   - Or you can manually add companies by entering their ticker symbols (e.g., "AAPL", "MSFT", "GOOGL")
-   
-   Note: The embedding process for new companies happens in the background and may take some time to complete.
-
-3. Access the application:
+2. Access the application:
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:8000
+   - API Docs: http://localhost:8000/docs
 
-### API Documentation
+3. Import companies using the CSV method:
+   - Edit `companies_to_import.csv` in the project root
+   - Go to Company Management tab in the UI
+   - Click "Import from CSV"
 
-Once running, you can access the API documentation at:
-- http://localhost:8000/docs
+## Importing Companies from CSV
+
+The system uses a CSV file to import companies and their filings from the SEC. The CSV file should be placed in the project root directory as `companies_to_import.csv`.
+
+### CSV Format
+
+The CSV file should contain the following columns:
+
+- `ticker`: Company ticker symbol (e.g., AAPL) - **Required**
+- `cik`: SEC Central Index Key (e.g., 0000320193) - *Optional but recommended*
+- `doc_type`: SEC filing type (e.g., 10-K, 10-Q, 8-K) - **Required**
+- `start_date`: Start date in ISO format (YYYY-MM-DD) - *Optional*
+- `end_date`: End date in ISO format (YYYY-MM-DD) - *Optional*
+
+Example:
+```
+ticker,cik,doc_type,start_date,end_date
+AAPL,0000320193,10-K,2020-01-01,2023-12-31
+MSFT,0000789019,10-K,2020-01-01,2023-12-31
+GOOGL,0001652044,10-K,2020-01-01,2023-12-31
+```
+
+#### Notes:
+- If `cik` is provided, it speeds up the import process
+- If `start_date` or `end_date` are not provided, reasonable defaults will be used
+- Valid `doc_type` values include: 10-K, 10-Q, 8-K, 10-K/A, 10-Q/A, 8-K/A, S-1, etc.
+- Processing happens in the background - check the status in the UI
+
+### Import Process
+
+1. Prepare the CSV file with the companies you want to import
+2. Place the file at the project root as `companies_to_import.csv`
+3. Go to the Company Management tab in the UI
+4. Click "Import from CSV"
+5. The system will process the companies in the background
+6. You can check the import status on the Company Management page
 
 ## Usage
 
 1. **Company Management**: Access the "Company Management" tab to:
    - View companies currently in your database
    - See details of company filings
-   - Add new companies by ticker symbol
-   - Load demo companies with a single click
+   - Import companies via CSV
    - Delete companies you no longer need
 
-2. **Chat Interface**: Enter questions about companies' 10-K filings:
+2. **Chat Interface**: Enter questions about companies' filings:
    - Filter by specific companies using the dropdown
    - Filter by specific filing year
    - View source documents for each answer
@@ -205,177 +233,23 @@ Example questions:
 - "How did Microsoft's revenue change from 2021 to 2022?"
 - "What is Amazon's strategy for international expansion?"
 
-## Data Update Process
-
-The data update process involves three main stages:
-
-1. **Fetching**: Retrieve company information and 10-K filing URLs from the SEC
-2. **Processing**: Extract text, split into sections, chunk into manageable pieces
-3. **Embedding**: Generate vector embeddings for each chunk using the configured embedding model
-
-You can run the full update or specific stages:
-```
-# Full update
-docker-compose exec backend python /app/data_updater/update_job.py
-
-# Skip specific stages
-docker-compose exec backend python /app/data_updater/update_job.py --skip-fetch
-docker-compose exec backend python /app/data_updater/update_job.py --skip-process
-docker-compose exec backend python /app/data_updater/update_job.py --skip-embeddings
-```
-
-### Importing Companies via CSV
-
-You can import multiple companies at once by editing the `companies_to_import.csv` file in the project root directory and clicking "Import from CSV" in the Company Management interface.
-
-The CSV file must have this format:
-```
-ticker,doc_type,date_range
-AAPL,10-K,2020-01-01,2025-12-31
-MSFT,10-Q,2022-01-01,2022-12-31
-GOOGL,8-K,2023-01-01,2023-12-31
-```
-
-**Column Definitions:**
-- `ticker`: The company's stock ticker symbol (e.g., AAPL for Apple)
-- `doc_type`: Type of SEC filing to download (e.g., 10-K, 10-Q, 8-K)
-- `date_range`: Start and end dates in ISO format (YYYY-MM-DD) separated by comma
-
-**Important Notes:**
-- Keep the header row (`ticker,doc_type,date_range`) in your CSV
-- Ticker symbols are case-insensitive
-- Supported document types include 10-K, 10-Q, 8-K and their amended versions (10-K/A, etc.)
-- Date ranges should be in ISO format (YYYY-MM-DD) and represent the filing date range to search
-- Edit `companies_to_import.csv` in the project root to add the companies you want
-- Processing happens in the background - check back later to see imported companies
-- You can download a template by clicking "Download Template" in the Company Management interface
-
-## Custom Configuration
-
-### Changing Embedding Provider
-
-1. Update `.env`:
-   ```
-   EMBEDDING_PROVIDER=GEMINI
-   EMBEDDING_MODEL=models/embedding-001
-   EMBEDDING_DIMENSION=768
-   GOOGLE_API_KEY=your_google_key
-   ```
-
-2. Ensure you provide the correct dimension for the model
-
-### Changing Chat Provider
-
-1. Update `.env`:
-   ```
-   CHAT_PROVIDER=OPENAI
-   CHAT_MODEL=gpt-4
-   OPENAI_API_KEY=your_openai_key
-   ```
-
-2. No database schema changes are needed when switching chat providers
-
-## Deployment on a Linux Server via SSH
-
-### Prerequisites
-- Linux server with SSH access
-- Docker and Docker Compose installed on the server
-- Git installed on the server
-
-### Deployment Steps
-
-1. **SSH into your server**:
-   ```bash
-   ssh username@your-server-ip
-   ```
-
-2. **Clone the repository**:
-   ```bash
-   git clone https://github.com/yourusername/AInalyst.git
-   cd AInalyst
-   ```
-
-3. **Configure environment variables**:
-   ```bash
-   cp .env.example .env
-   nano .env  # Edit the file with your API keys and configuration
-   ```
-
-4. **Build and start the Docker containers**:
-   ```bash
-   docker-compose up -d --build
-   ```
-
-5. **Access the application**:
-   ```bash
-   # No manual database initialization needed
-   # Just access the frontend and use the Company Management interface
-   ```
-
-6. **Configure firewall (if needed)**:
-   Make sure ports 3000 (frontend) and 8000 (backend) are accessible:
-   ```bash
-   sudo ufw allow 3000
-   sudo ufw allow 8000
-   ```
-
-7. **Access the application**:
-   - Frontend: `http://your-server-ip:3000`
-   - Backend API: `http://your-server-ip:8000`
-   - API Docs: `http://your-server-ip:8000/docs`
-
-### Production Considerations
-
-For a production deployment, consider the following additional steps:
-
-1. **Set up a reverse proxy (Nginx or Traefik)** to handle SSL termination and route traffic.
-
-2. **Configure domain names** instead of using IP addresses:
-   ```nginx
-   # Example Nginx configuration
-   server {
-       listen 80;
-       server_name chat.yourdomain.com;
-       
-       location / {
-           proxy_pass http://localhost:3000;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-       }
-   }
-   
-   server {
-       listen 80;
-       server_name api.yourdomain.com;
-       
-       location / {
-           proxy_pass http://localhost:8000;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-       }
-   }
-   ```
-
-3. **Set up SSL certificates** using Let's Encrypt:
-   ```bash
-   sudo certbot --nginx -d chat.yourdomain.com -d api.yourdomain.com
-   ```
-
-4. **Set up container monitoring** with tools like Portainer or Prometheus + Grafana.
-
-5. **Configure automatic backups** for the PostgreSQL database:
-   ```bash
-   # Add a cron job for daily backups
-   crontab -e
-   # Add this line:
-   0 2 * * * docker exec sp500_rag_db pg_dump -U postgres sp500_db > /path/to/backups/sp500_backup_$(date +\%Y\%m\%d).sql
-   ```
-
-## License
-
-[MIT License](LICENSE)
-
 ## Troubleshooting
+
+### CSV Import Issues
+
+- Make sure the CSV file is named exactly `companies_to_import.csv`
+- Place the file in the project root directory (not inside backend or frontend folders)
+- Check that the CSV has the correct format and headers
+- Verify that the Docker containers have access to the file
+
+### Connection Issues
+
+If the frontend can't connect to the backend:
+
+1. Check that both containers are running: `docker-compose ps`
+2. Verify the backend logs for errors: `docker-compose logs backend`
+3. Make sure the frontend is configured with the correct API URL
+4. Check for CORS issues in the backend logs
 
 ### No Context Found / Empty Search Results
 
@@ -385,13 +259,15 @@ If the system reports "No context found" or gives generic responses despite havi
 docker exec -it sp500_rag_backend python -c 'from app.db.database import SessionLocal; from data_updater.create_embeddings import create_embeddings; db = SessionLocal(); print(create_embeddings(db)); db.close()'
 ```
 
-This process may take some time depending on how many text chunks need embeddings. You can monitor progress with:
+You can monitor progress with:
 
 ```bash
 docker exec -it sp500_rag_db psql -U postgres -d <your_db_name> -c "SELECT COUNT(*) as total_chunks, SUM(CASE WHEN embedded THEN 1 ELSE 0 END) as embedded_chunks FROM text_chunks;"
 ```
 
-Replace `<your_db_name>` with your database name (default is `sp500_db`).
+## License
+
+[MIT License](LICENSE)
 
 ## Acknowledgments
 

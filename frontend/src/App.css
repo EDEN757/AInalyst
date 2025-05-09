@@ -357,6 +357,11 @@ body {
   border-left: 4px solid #0095ff;
 }
 
+.csv-format-info ul {
+  margin-left: 20px;
+  padding-left: 0;
+}
+
 .csv-actions {
   display: flex;
   gap: 10px;
@@ -382,6 +387,122 @@ body {
 
 .csv-error-help ul {
   padding-left: 25px;
+}
+
+/* Import results styling */
+.csv-import-results {
+  margin: 10px 0 20px;
+  padding: 15px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  animation: fadeIn 0.3s ease-in;
+}
+
+.csv-import-results.success {
+  background-color: #e8f5e9;
+  border-left: 4px solid #4caf50;
+  color: #1b5e20;
+}
+
+.csv-import-results.error {
+  background-color: #ffebee;
+  border-left: 4px solid #f44336;
+  color: #b71c1c;
+}
+
+.csv-import-results h4 {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  font-size: 1.1rem;
+}
+
+.status-icon {
+  margin-right: 8px;
+  font-size: 1.2rem;
+}
+
+.csv-import-results p {
+  margin: 8px 0;
+  line-height: 1.4;
+}
+
+.importing-companies {
+  margin-top: 8px;
+}
+
+.companies-list {
+  margin: 5px 0;
+  padding-left: 20px;
+  list-style-type: disc;
+}
+
+.error-troubleshooting {
+  margin-top: 10px;
+  background-color: rgba(255, 255, 255, 0.5);
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.error-troubleshooting h5 {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.error-troubleshooting ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.error-troubleshooting li {
+  margin-bottom: 4px;
+}
+
+/* Import status styling */
+.import-status {
+  margin: 15px 0;
+  padding: 12px;
+  background-color: #e3f2fd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.import-status h5 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #0d47a1;
+}
+
+.status-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+}
+
+.status-label {
+  font-weight: 500;
+  width: 100px;
+}
+
+.status-value {
+  font-family: monospace;
+  font-size: 0.95rem;
+}
+
+.status-percent {
+  margin-left: 8px;
+  color: #555;
+  font-size: 0.85rem;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .form-group {
