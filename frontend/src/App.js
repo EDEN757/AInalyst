@@ -61,12 +61,14 @@ function App() {
   const messagesEndRef = useRef(null);
   
   // Try multiple API URLs if the primary one fails
-  // Order of precedence: Environment variable, host.docker.internal, localhost
+  // Order of precedence: Environment variable, host.docker.internal, localhost, backend service name
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
   const API_FALLBACK_URLS = [
     API_URL,
     'http://host.docker.internal:8000',
-    'http://localhost:8000'
+    'http://localhost:8000',
+    'http://backend:8000',  // Docker service name
+    'http://sp500_rag_backend:8000'  // Docker container name
   ];
   
   // Check API connectivity

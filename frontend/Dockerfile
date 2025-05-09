@@ -5,6 +5,9 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /app
 
+# Set environment variable for API connection with fallbacks
+ENV REACT_APP_API_URL http://host.docker.internal:8000
+
 # Copy package.json and package-lock.json
 COPY package.json package-lock.json* ./
 

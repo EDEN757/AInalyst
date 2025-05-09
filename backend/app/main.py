@@ -39,6 +39,16 @@ app.add_middleware(
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
+# Add explicit CORS headers to all responses via middleware
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    # Add CORS headers to every response
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
+
 # Include routers
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(companies.router, prefix="/api/v1", tags=["companies"])

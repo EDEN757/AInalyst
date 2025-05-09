@@ -48,8 +48,13 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
         # Legacy Docker location (keeping for compatibility)
         "/app/companies_to_import.csv",
 
-        # Absolute path to the expected CSV location
-        "/Users/edoardoschiatti/Documents/GitHub/AInalyst/companies_to_import.csv"
+        # Docker volume mount or project folders
+        "/companies_to_import.csv",
+
+        # Try a few common project folder names
+        "/app/companies_to_import.csv",
+        "/project/companies_to_import.csv",
+        "/src/companies_to_import.csv"
     ]
 
     # If current directory is not inside backend, check there too
@@ -142,13 +147,15 @@ async def import_companies_from_csv(db: Session = Depends(get_db)):
                     error_paths = [
                         os.path.join(project_root, "companies_to_import.csv"),
                         "/data/companies_to_import.csv",
-                        "/app/companies_to_import.csv"
+                        "/app/companies_to_import.csv",
+                        "/companies_to_import.csv"
                     ]
 
                     error_message = "No companies_to_import.csv file found. Please create the file at one of these locations:\n"
                     for path in error_paths:
                         error_message += f"- {path}\n"
                     error_message += "\nDownload the template from the web interface, edit it, and place it in one of these locations."
+                    error_message += "\n\nImportant: If you're using Docker, ensure the file is in the project root folder."
 
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,

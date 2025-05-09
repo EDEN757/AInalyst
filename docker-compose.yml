@@ -45,8 +45,9 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     volumes:
       - ./backend:/app
-      # Mount the CSV at /data instead of /app to avoid conflicts
+      # Mount the CSV in multiple locations to ensure it's found
       - ./companies_to_import.csv:/data/companies_to_import.csv
+      - ./companies_to_import.csv:/companies_to_import.csv
     depends_on:
       db:
         condition: service_healthy
