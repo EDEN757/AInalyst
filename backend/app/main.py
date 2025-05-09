@@ -1,5 +1,6 @@
 import logging
 import time
+import datetime
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -27,13 +28,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configure CORS
+# Configure CORS - make sure to allow any origin for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=["*"],  # For development - allows requests from any origin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # Include routers
@@ -224,9 +227,14 @@ async def health_check():
                 "error": str(e)
             }
         )
-    
+
     return {
         "status": "ok",
         "database": db_status,
         "version": "1.0.0"
     }
+
+@app.get("/ping")
+async def ping():
+    """Simple ping endpoint for connectivity testing"""
+    return {"ping": "pong", "time": datetime.datetime.now().isoformat()}

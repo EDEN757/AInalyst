@@ -60,19 +60,76 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const messagesEndRef = useRef(null);
   
+  // Try multiple API URLs if the primary one fails
+  // Order of precedence: Environment variable, host.docker.internal, localhost
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+  const API_FALLBACK_URLS = [
+    API_URL,
+    'http://host.docker.internal:8000',
+    'http://localhost:8000'
+  ];
   
   // Check API connectivity
+  // Function to try multiple API URLs
+  const getWorkingApiUrl = async () => {
+    // Try each URL in the fallback list
+    for (const url of API_FALLBACK_URLS) {
+      try {
+        console.log(`Testing API URL: ${url}`);
+        // Simple ping test first - fast and lightweight
+        const pingResponse = await apiClient.get(`${url}/ping`, {
+          timeout: 3000,
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+
+        if (pingResponse.data) {
+          console.log(`✅ Found working API at ${url}`);
+          // Return the first URL that responds
+          return url;
+        }
+      } catch (error) {
+        console.warn(`❌ API at ${url} failed ping test:`, error.message);
+      }
+    }
+    return null;  // No working URLs found
+  };
+
   useEffect(() => {
     const checkApiStatus = async () => {
       try {
         setApiError(null);
-        console.log('Checking API health status...');
-        const response = await apiClient.get(`${API_URL}/health`, { timeout: 5000 });
+        console.log('Checking API connectivity...');
+
+        // Find a working API URL
+        const workingUrl = await getWorkingApiUrl();
+
+        if (!workingUrl) {
+          throw new Error("No working API URL found");
+        }
+
+        // Store the working URL globally
+        window.workingApiUrl = workingUrl;
+
+        // If it's not our primary URL, log a warning
+        if (workingUrl !== API_URL) {
+          console.warn(`Using fallback URL ${workingUrl} instead of primary URL ${API_URL}`);
+        }
+
+        // If we found a URL that works, do a full health check
+        const response = await apiClient.get(`${workingUrl}/health`, {
+          timeout: 5000,
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+
         if (response.data.status === 'ok') {
           setIsConnected(true);
           console.log('✅ API connected successfully');
           console.log('Database status:', response.data.database);
+
+          // Show a warning if using fallback
+          if (workingUrl !== API_URL) {
+            setApiError(`Note: Using fallback API URL ${workingUrl} instead of ${API_URL}`);
+          }
         } else {
           console.error('❌ API health check returned non-ok status:', response.data);
           setApiError(`API Error: ${JSON.stringify(response.data)}`);
@@ -80,20 +137,17 @@ function App() {
         }
       } catch (error) {
         console.error('❌ API health check error:', error);
-        if (error.response) {
-          // Server responded with an error
-          setApiError(`API Error (${error.response.status}): ${error.response.data.detail || JSON.stringify(error.response.data)}`);
-        } else if (error.request) {
-          // No response received
-          setApiError('Connection Error: Unable to reach the API server. Please check if the backend is running.' +
-                      (API_URL.includes('localhost') ?
-                       '\n\nPossible solution: If you\'re using Docker, try changing REACT_APP_API_URL in docker-compose.yml to "http://backend:8000".' :
-                       ''));
-        } else {
-          // Something else went wrong
-          setApiError(`Request Error: ${error.message}`);
-        }
         setIsConnected(false);
+
+        // Construct a helpful error message
+        let errorMsg = "Connection Error: Unable to reach the API server. Please check if the backend is running.";
+        errorMsg += "\n\nAttempted these URLs:";
+        API_FALLBACK_URLS.forEach(url => {
+          errorMsg += `\n- ${url}`;
+        });
+        errorMsg += "\n\nIf you're using Docker, make sure all containers are running with 'docker-compose ps'.";
+
+        setApiError(errorMsg);
       }
     };
 
@@ -112,7 +166,9 @@ function App() {
       
       try {
         setApiError(null);
-        const response = await apiClient.get(`${API_URL}/api/v1/companies`, { timeout: 10000 });
+        // Use the working URL if one was found, otherwise fall back to the default
+        const apiUrl = window.workingApiUrl || API_URL;
+        const response = await apiClient.get(`${apiUrl}/api/v1/companies`, { timeout: 10000 });
         
         if (response.data && Array.isArray(response.data)) {
           console.log(`Fetched ${response.data.length} companies successfully`);
@@ -199,8 +255,10 @@ function App() {
       console.log('Sending chat query:', query);
       
       // Send to API with timeout
+      // Use the working URL if one was found, otherwise fall back to the default
+      const apiUrl = window.workingApiUrl || API_URL;
       const response = await apiClient.post(
-        `${API_URL}/api/v1/chat`,
+        `${apiUrl}/api/v1/chat`,
         query,
         { timeout: 30000 } // 30 second timeout for chat requests
       );
@@ -346,8 +404,8 @@ function App() {
       )}
       
       {activeTab === 'manage' && (
-        <CompanyManagement 
-          apiUrl={API_URL}
+        <CompanyManagement
+          apiUrl={window.workingApiUrl || API_URL}
           onCompaniesUpdated={handleCompaniesUpdated}
         />
       )}

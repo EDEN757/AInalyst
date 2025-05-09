@@ -31,16 +31,20 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
   const fetchCompanies = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      const response = await apiClient.get(`${apiUrl}/api/v1/companies`);
+      // Use the working URL if one was found, otherwise fall back to the default
+      const effectiveApiUrl = window.workingApiUrl || apiUrl;
+      console.log(`Fetching companies using API URL: ${effectiveApiUrl}`);
+
+      const response = await apiClient.get(`${effectiveApiUrl}/api/v1/companies`);
       setCompanies(response.data);
-      
+
       // Notify parent component that companies were updated
       if (onCompaniesUpdated) {
         onCompaniesUpdated(response.data);
       }
-      
+
     } catch (error) {
       console.error('Error fetching companies:', error);
       setError('Error fetching companies. Please try again later.');
@@ -51,12 +55,16 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
 
   const fetchFilings = async (symbol) => {
     if (!symbol) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
-      const response = await apiClient.get(`${apiUrl}/api/v1/companies/${symbol}/filings`);
+      // Use the working URL if one was found, otherwise fall back to the default
+      const effectiveApiUrl = window.workingApiUrl || apiUrl;
+      console.log(`Fetching filings for ${symbol} using API URL: ${effectiveApiUrl}`);
+
+      const response = await apiClient.get(`${effectiveApiUrl}/api/v1/companies/${symbol}/filings`);
       setFilings(response.data);
     } catch (error) {
       console.error(`Error fetching filings for ${symbol}:`, error);
@@ -76,23 +84,27 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
     if (!window.confirm(`Are you sure you want to delete ${symbol} and all its data?`)) {
       return;
     }
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
-      const response = await apiClient.delete(`${apiUrl}/api/v1/companies/${symbol}`);
+      // Use the working URL if one was found, otherwise fall back to the default
+      const effectiveApiUrl = window.workingApiUrl || apiUrl;
+      console.log(`Deleting company ${symbol} using API URL: ${effectiveApiUrl}`);
+
+      const response = await apiClient.delete(`${effectiveApiUrl}/api/v1/companies/${symbol}`);
       console.log('Delete company response:', response.data);
-      
+
       // Refresh companies list
       fetchCompanies();
-      
+
       // Clear selected company if it's the one deleted
       if (selectedCompany && selectedCompany.symbol === symbol) {
         setSelectedCompany(null);
         setFilings([]);
       }
-      
+
     } catch (error) {
       console.error(`Error deleting company ${symbol}:`, error);
       setError(`Error deleting company ${symbol}`);
@@ -107,8 +119,12 @@ const CompanyManagement = ({ apiUrl, onCompaniesUpdated }) => {
     setCsvImporting(true);
 
     try {
+      // Use the working URL if one was found, otherwise fall back to the default
+      const effectiveApiUrl = window.workingApiUrl || apiUrl;
+      console.log(`Importing CSV using API URL: ${effectiveApiUrl}`);
+
       // Call the API to process the CSV file in the project
-      const response = await apiClient.post(`${apiUrl}/api/v1/companies/import-from-csv`);
+      const response = await apiClient.post(`${effectiveApiUrl}/api/v1/companies/import-from-csv`);
 
       console.log('CSV import response:', response.data);
 
@@ -168,26 +184,30 @@ Processing in background. Please check back in a few minutes.`;
   
   const handleDownloadTemplate = async () => {
     try {
-      const response = await apiClient.get(`${apiUrl}/api/v1/companies/csv-template`);
-      
+      // Use the working URL if one was found, otherwise fall back to the default
+      const effectiveApiUrl = window.workingApiUrl || apiUrl;
+      console.log(`Downloading template using API URL: ${effectiveApiUrl}`);
+
+      const response = await apiClient.get(`${effectiveApiUrl}/api/v1/companies/csv-template`);
+
       // Create a blob from the CSV content
       const blob = new Blob([response.data.content], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
-      
+
       // Create a temporary link element and trigger download
       const a = document.createElement('a');
       a.href = url;
       a.download = response.data.filename;
       document.body.appendChild(a);
       a.click();
-      
+
       // Clean up
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      
+
       // Show instructions
       alert(response.data.instructions);
-      
+
     } catch (error) {
       console.error('Error downloading template:', error);
       alert('Error downloading CSV template');
