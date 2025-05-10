@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getCompanies, getCompaniesStatus } from '../utils/api';
+import { getCompanies } from '../utils/api';
 import { useAppContext } from '../context/AppContext';
 
 const CompanyManagement = () => {
@@ -8,17 +8,14 @@ const CompanyManagement = () => {
 
   // Local state
   const [companies, setCompanies] = useState([]);
-  const [companiesStatus, setCompaniesStatus] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('database'); // 'database' or 'status'
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'ticker', direction: 'asc' });
 
   // Fetch data on component mount
   useEffect(() => {
     fetchCompanies();
-    fetchCompaniesStatus();
   }, []);
 
   // Fetch companies
@@ -37,37 +34,10 @@ const CompanyManagement = () => {
     }
   };
 
-  // Fetch companies status
-  const fetchCompaniesStatus = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const data = await getCompaniesStatus();
-      setCompaniesStatus(data);
-    } catch (err) {
-      console.error('Error fetching companies status:', err);
-      setError('Failed to load companies status');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Request refresh of data
   const refreshData = () => {
     fetchCompanies();
-    fetchCompaniesStatus();
   };
-
-  // Find companies that are in the CSV but not in the database
-  const findMissingCompanies = () => {
-    if (!companies.length || !companiesStatus.length) return [];
-
-    const dbCompanies = new Set(companies.map(company => company.ticker));
-    return companiesStatus.filter(company => !dbCompanies.has(company.ticker));
-  };
-
-  const missingCompanies = findMissingCompanies();
 
   // Sort companies
   const sortedCompanies = [...companies].sort((a, b) => {
@@ -113,140 +83,43 @@ const CompanyManagement = () => {
         </div>
       </div>
 
-      <div className="tabs">
-        <button
-          className={`tab-button ${activeTab === 'database' ? 'active' : ''}`}
-          onClick={() => setActiveTab('database')}
-        >
-          Database ({companies.length})
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'status' ? 'active' : ''}`}
-          onClick={() => setActiveTab('status')}
-        >
-          Ingestion Status
-        </button>
-      </div>
-
       {loading && <div className="loading">Loading data...</div>}
       {error && <div className="error">{error}</div>}
       
-      {activeTab === 'database' && (
-        <>
-          <div className="status-section">
-            <h3>Database Status</h3>
-            <div className="status-summary">
-              <div className="status-item">
-                <div className="status-label">Companies in Database:</div>
-                <div className="status-value">{companies.length}</div>
-              </div>
-              <div className="status-item">
-                <div className="status-label">Companies in CSV:</div>
-                <div className="status-value">{companiesStatus.length}</div>
-              </div>
-              <div className="status-item">
-                <div className="status-label">Missing Companies:</div>
-                <div className="status-value">{missingCompanies.length}</div>
-              </div>
-            </div>
+      <div className="status-section">
+        <h3>Database Status</h3>
+        <div className="status-summary">
+          <div className="status-item">
+            <div className="status-label">Companies in Database:</div>
+            <div className="status-value">{companies.length}</div>
           </div>
+        </div>
+      </div>
 
-          {missingCompanies.length > 0 && (
-            <div className="missing-companies">
-              <h3>Companies in CSV Awaiting Ingestion</h3>
-              <ul>
-                {missingCompanies.map(company => (
-                  <li key={company.ticker}>
-                    {company.ticker} - {company.company_name} ({company.start_year} to {company.end_year})
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <h3>Companies in Database</h3>
-          {filteredCompanies.length > 0 ? (
-            <div className="companies-grid">
-              {filteredCompanies.map(company => (
-                <div key={company.ticker} className="company-card">
-                  <h3>{company.ticker}</h3>
-                  <div className="company-details">
-                    <div className="years-label">Available Years:</div>
-                    <div className="years-list">
-                      {company.years.map(year => (
-                        <span key={year} className="year-badge">{year}</span>
-                      ))}
-                    </div>
-                    <div className="document-count">
-                      {company.total_documents} documents
-                    </div>
-                  </div>
+      <h3>Companies in Database</h3>
+      {filteredCompanies.length > 0 ? (
+        <div className="companies-grid">
+          {filteredCompanies.map(company => (
+            <div key={company.ticker} className="company-card">
+              <h3>{company.ticker}</h3>
+              <div className="company-details">
+                <div className="years-label">Available Years:</div>
+                <div className="years-list">
+                  {company.years.map(year => (
+                    <span key={year} className="year-badge">{year}</span>
+                  ))}
                 </div>
-              ))}
+                <div className="document-count">
+                  {company.total_documents} documents
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="no-results">
-              {searchTerm ? 'No companies match your search.' : 'No companies in database.'}
-            </div>
-          )}
-        </>
-      )}
-
-      {activeTab === 'status' && (
-        <>
-          <h3>Ingestion Status by Company</h3>
-          {companiesStatus.length > 0 ? (
-            <div className="status-table-container">
-              <table className="status-table">
-                <thead>
-                  <tr>
-                    <th onClick={() => handleSort('ticker')}>
-                      Ticker {sortConfig.key === 'ticker' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th>Company Name</th>
-                    <th>Years Range</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {companiesStatus.map(company => {
-                    // Calculate ingestion progress
-                    const totalYears = company.end_year - company.start_year + 1;
-                    const totalDocuments = totalYears * 2; // 10-K and 10-K/A per year
-                    
-                    let ingestedDocuments = 0;
-                    company.years.forEach(yearData => {
-                      yearData.documents.forEach(doc => {
-                        if (doc.exists) ingestedDocuments++;
-                      });
-                    });
-                    
-                    const progressPercent = Math.round((ingestedDocuments / totalDocuments) * 100);
-                    
-                    return (
-                      <tr key={company.ticker}>
-                        <td>{company.ticker}</td>
-                        <td>{company.company_name}</td>
-                        <td>{company.start_year} - {company.end_year}</td>
-                        <td>
-                          <div className="progress-container">
-                            <div 
-                              className="progress-bar" 
-                              style={{width: `${progressPercent}%`}}
-                            ></div>
-                            <span className="progress-text">{progressPercent}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="no-results">No ingestion status available.</div>
-          )}
-        </>
+          ))}
+        </div>
+      ) : (
+        <div className="no-results">
+          {searchTerm ? 'No companies match your search.' : 'No companies in database.'}
+        </div>
       )}
 
       <style jsx>{`
@@ -292,26 +165,6 @@ const CompanyManagement = () => {
           border: 1px solid var(--border-color);
           border-radius: var(--border-radius);
           min-width: 200px;
-        }
-        
-        .tabs {
-          display: flex;
-          margin-bottom: 24px;
-          border-bottom: 1px solid var(--border-color);
-        }
-        
-        .tab-button {
-          padding: 12px 20px;
-          background: none;
-          border: none;
-          border-bottom: 2px solid transparent;
-          cursor: pointer;
-          font-weight: 500;
-        }
-        
-        .tab-button.active {
-          color: var(--primary-color);
-          border-bottom: 2px solid var(--primary-color);
         }
         
         h2 {
@@ -373,29 +226,7 @@ const CompanyManagement = () => {
           font-weight: bold;
           color: #1890ff;
         }
-        
-        .missing-companies {
-          background-color: #fffbe6;
-          border: 1px solid #ffe58f;
-          border-radius: 8px;
-          padding: 16px;
-          margin-bottom: 24px;
-        }
-        
-        .missing-companies h3 {
-          color: #d48806;
-          margin-top: 0;
-        }
-        
-        .missing-companies ul {
-          padding-left: 20px;
-          margin: 0;
-        }
-        
-        .missing-companies li {
-          margin-bottom: 8px;
-        }
-        
+       
         .companies-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -444,60 +275,6 @@ const CompanyManagement = () => {
         .document-count {
           font-size: 0.9em;
           color: #8c8c8c;
-        }
-        
-        .status-table-container {
-          overflow-x: auto;
-        }
-        
-        .status-table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-        
-        .status-table th {
-          background-color: #fafafa;
-          padding: 12px 16px;
-          text-align: left;
-          border-bottom: 1px solid #e8e8e8;
-          cursor: pointer;
-        }
-        
-        .status-table th:hover {
-          background-color: #f0f0f0;
-        }
-        
-        .status-table td {
-          padding: 12px 16px;
-          border-bottom: 1px solid #e8e8e8;
-        }
-        
-        .progress-container {
-          width: 100%;
-          background-color: #f0f0f0;
-          border-radius: 4px;
-          height: 20px;
-          position: relative;
-        }
-        
-        .progress-bar {
-          height: 100%;
-          background-color: #52c41a;
-          border-radius: 4px;
-        }
-        
-        .progress-text {
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #595959;
-          font-size: 0.8em;
-          font-weight: 500;
         }
         
         .no-results {

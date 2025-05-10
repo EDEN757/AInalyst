@@ -155,7 +155,7 @@ async def generate_chat_response(
                 "ticker": doc["ticker"],
                 "year": doc["year"],
                 "document_type": doc["document_type"],
-                "section": doc.get("section_name", ""),
+                "section": doc.get("section_name", "Full Document"),
                 "similarity_score": doc["similarity_score"],
                 "url": doc.get("source_url", "")
             })
