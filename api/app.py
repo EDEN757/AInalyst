@@ -5,6 +5,7 @@ import os
 import json
 import logging
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import openai
@@ -26,7 +27,12 @@ app = FastAPI(
     description="Retrieval-Augmented-Generation over SEC 10-K filings",
     version="0.1.0"
 )
-
+app.add_middleware(
+  CORSMiddleware,
+  allow_origins=["http://localhost:3000"],  # your Next.js dev URL
+  allow_methods=["POST", "GET", "OPTIONS"],
+  allow_headers=["*"],
+)
 # ─── Request/response schemas ─────────────────────────────────────────────────
 class AskRequest(BaseModel):
     query: str
