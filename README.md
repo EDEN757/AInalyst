@@ -1,47 +1,173 @@
-## README
+# AInalyst
 
-### Overview
-This Python script **download_filings.py** automates fetching 10-K filings from the SEC EDGAR system for a list of US companies, preparing them for retrieval-augmented generation (RAG) workflows. You provide a CSV of tickers and date ranges; it downloads each 10-K, extracts the main text, and saves it as a JSON file with metadata.
+**A Retrieval‑Augmented‑Generation (RAG) chatbot for SEC 10‑K filings**
 
-### Requirements
-- Python **3.7** or higher  
-- Packages:
-  ```bash
-  pip install requests python-dateutil
-### Input CSV Format
-	•	ticker,start_date,end_date
-AAPL,2020-01-01,2021-12-31
-MSFT,2019-07-01,2020-06-30
-	ticker: Stock symbol (e.g. AAPL)
-	•	start_date, end_date: Date range in YYYY-MM-DD for the filings
-### Usage
+This project lets you:
+
+1. **Download** 10‑K filings from the SEC as JSON.
+2. **Chunk** and **embed** them with OpenAI embeddings + FAISS.
+3. **Serve** a FastAPI backend to retrieve top‑K snippets and call ChatGPT.
+4. **Run** a Next.js + Tailwind CSS frontend for an interactive chat UI.
+
+---
+
+## 📁 Repository Structure
+
+```
+AInalyst/
+├── .env                         # Your OpenAI API key & config
+├── company_filings.py           # Download & clean 10‑K filings as JSON
+├── incremental_chunk_embed.py   # One‑time or incremental chunk + FAISS embedder
+├── query_rag.py                 # CLI to test retrieval (embed query & show top‑K chunks)
+├── api/
+│   └── app.py                   # FastAPI service `/ask` endpoint
+└── frontend/                    # Next.js 13 App Router + Tailwind chat UI
+    ├── src/
+    │   └── app/
+    │       ├── layout.tsx       # Root layout (imports globals.css)
+    │       └── page.tsx         # Chat UI page (fetches `/ask`)
+    ├── public/                  # Static assets
+    ├── styles/                  # globals.css + Tailwind imports
+    ├── package.json             # Frontend dependencies & scripts
+    ├── tsconfig.json            # TypeScript config
+    └── next.config.js           # Proxy `/api` to FastAPI if configured
+```
+
+---
+
+## ⚙️ Prerequisites
+
+* **Python 3.8+**
+* **Node 18+** + **npm**
+* **OpenAI API key** (set in `.env`)
+* **Tailwind CLI** (installed via `npm install`)
+
+---
+
+## 📝 Configuration
+
+1. Copy `.env.example` to `.env` at the repo root and set:
+
+   ```ini
+   OPENAI_API_KEY=sk-…
+   CHAT_MODEL=gpt-4           # or gpt-3.5-turbo
+   ```
+2. (Optional) In `frontend/next.config.js` you can proxy `/api` → `http://localhost:8000`.
+
+---
+
+## 1) Import 10‑K Filings
+
+Prepare a CSV `tickers.csv` with columns:
+
+```
+ticker,start_date,end_date
+AAPL,2020-01-01,2023-01-01
+MSFT,2021-01-01,2024-01-01
+```
+
+Run the downloader:
+
+```bash
 python download_filings.py companies.csv \
-  --user-agent "YourName YourApp your.email@example.com"
-Optional flags:
-	•	--output-dir: where to store downloaded data (default data/)
-	•	--mapping-file: local path for the ticker→CIK mapping JSON (default company_tickers.json)
+  --user-agent "Your Name Your Project <your.email@example.com>"
+```
 
-### How It Works
-	1.	Mapping: Loads or downloads SEC’s company_tickers.json to map tickers → CIKs.
-	2.	Submissions Index: Queries https://data.sec.gov/submissions/CIK{CIK}.json for each company.
-	3.	Filtering: Selects filings where form == "10-K" and the filingDate falls in your CSV’s date range.
-	4.	Idempotency: Checks if data/<TICKER>/<ACCESSION>.json already exists; skips downloads to avoid duplicates.
-	5.	Downloading: Fetches the raw text file from https://www.sec.gov/Archives/edgar/data/{CIK}/{ACCESSIONNODASH}/{ACCESSIONNODASH}.txt.
-	6.	Extraction: Parses out the <TEXT> section of the 10-K document.
-	7.	Serialization: Saves a JSON record per filing containing:
-	•	ticker, cik, accession
-	•	filing_date, form, document_url
-	•	text (the extracted filing body)
+Filing JSONs land in `data/<TICKER>/<ACCESSION>.json`.
 
-### Output Structure
-data/
-└─ AAPL/
-   ├─ 0000320193-21-000010.json
-   ├─ 0000320193-20-000010.json
-   └─ ...
-└─ MSFT/
-   ├─ 0000789019-20-000010.json
-   └─ ...
-### Customization & Best Practices
-	•	User-Agent: SEC requires a descriptive User-Agent; set it to your app name and contact email.
-	•	Rate Limiting: The script includes a short time.sleep(0.1) between downloads to respect SEC limits. Adjust if needed.
+---
+
+## 2) Build or Update the Embedding Index
+
+Install Python requirements:
+
+```bash
+pip install -r requirements.txt
+```
+
+Run the incremental embedder (one‑off or repeatable):
+
+```bash
+python incremental_chunk_embed.py
+```
+
+* Creates/updates `faiss_index.idx` and `faiss_metadata.json`.
+* Skips chunks you’ve already embedded.
+
+---
+
+## 3) Test Retrieval via CLI
+
+```bash
+python query_rag.py \
+  --query "What liquidity risks does Apple cite?" \
+  --k 5
+```
+
+This prints the top‑K most similar chunks and their metadata.
+
+---
+
+## 4) Run the FastAPI Backend
+
+From project root:
+
+```bash
+uvicorn api.app:app --reload
+```
+
+* Endpoint: **`POST http://localhost:8000/ask`**
+* Body: `{ "query":"...", "k":5 }`
+* Response: `{ answer: string, context: [{ticker, accession, chunk_index, filing_date, score, text}] }`
+
+---
+
+## 5) Run the Frontend Chat UI
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open **[http://localhost:3000](http://localhost:3000)** in your browser.
+
+* Type a question into the input box.
+* Click “Send” to POST to `/ask`.
+* See the AI answer and source snippets.
+
+---
+
+## 🛠️ Troubleshooting
+
+* **CORS errors**: Ensure FastAPI has:
+
+  ```python
+  from fastapi.middleware.cors import CORSMiddleware
+  app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["POST","GET"],
+    allow_headers=["*"],
+  )
+  ```
+* **Module not found**: Generate UI components via shadcn:
+
+  ```bash
+  cd frontend
+  npx shadcn@latest init
+  npx shadcn@latest add button input card scroll-area
+  ```
+
+---
+
+## 🚀 Next Steps
+
+* Add authentication (API keys, OAuth).
+* Persist multi-turn sessions (Redis).
+* Deploy containerized (Docker) to AWS/GCP.
+* Swap FAISS for a managed vector store.
+
+---
+
+© 2025 AInalyst Open Source Project. Feel free to fork & contribute!
