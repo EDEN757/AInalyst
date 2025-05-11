@@ -58,7 +58,7 @@ AInalyst/
 
 ## 1) Import 10‑K Filings
 
-Prepare a CSV `tickers.csv` with columns:
+Prepare a CSV `companies.csv` with columns:
 
 ```
 ticker,start_date,end_date
