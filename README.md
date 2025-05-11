@@ -50,7 +50,7 @@ AInalyst/
 
    ```ini
    OPENAI_API_KEY=sk-…
-   CHAT_MODEL=gpt-4           # or gpt-3.5-turbo
+   CHAT_MODEL=gpt-4.1-mini-2025-04-14           # or gpt-3.5-turbo
    ```
 2. (Optional) In `frontend/next.config.js` you can proxy `/api` → `http://localhost:8000`.
 
