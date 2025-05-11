@@ -1,8 +1,30 @@
-# Python
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.Python
+
+# Environment and secrets
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Sensitive data
+company_tickers.json
+companies.csv
+data/
+
+# FAISS and embeddings
+faiss_index.idx
+faiss_metadata.json
+
+# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -19,30 +41,17 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-venv/
-/venv/
-.venv/
-# Node
-node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
-package-lock.json
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Jupyter Notebook
+.ipynb_checkpoints
 
-# IDE
+# IDE specific files
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# OS
+# OS specific files
 .DS_Store
 .DS_Store?
 ._*
@@ -50,16 +59,3 @@ package-lock.json
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# Docker
-.docker/
-
-# Database
-*.sqlite3
-*.db
-
-# Log files
-*.log
-
-# Project specific
-/data/
