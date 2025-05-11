@@ -16,7 +16,7 @@ This project lets you:
 ```
 AInalyst/
 ├── .env                         # Your OpenAI API key & config
-├── company_filings.py           # Download & clean 10‑K filings as JSON
+├── download_filings.py           # Download & clean 10‑K filings as JSON
 ├── incremental_chunk_embed.py   # One‑time or incremental chunk + FAISS embedder
 ├── query_rag.py                 # CLI to test retrieval (embed query & show top‑K chunks)
 ├── api/
