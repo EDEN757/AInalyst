@@ -179,7 +179,7 @@ Licensed under the MIT License. See the full text below or in the accompanying [
 ```
 MIT License
 
-Copyright (c) Edoardo Schiatti
+Copyright (c) 2025 Edoardo Schiatti
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
