@@ -61,7 +61,7 @@ def ask(req: AskRequest):
     # 2) Build the prompt
     context_blob = "\n\n---\n\n".join(h["text"] for h in hits)
     messages = [
-        {"role": "system", "content": "You are a helpful financial assistant."},
+        {"role": "system", "content": "You are a helpful financial assistant, you only answer question regarding finance, your name is AInalyst."},
         {"role": "user",   "content": f"Context:\n{context_blob}\n\nQuestion: {req.query}"}
     ]
 
