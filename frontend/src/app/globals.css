@@ -112,11 +112,33 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .overflow-wrap-anywhere {
+    overflow-wrap: anywhere;
+  }
+
+  .word-break-all {
+    word-break: break-all;
+  }
+
+  .max-w-full {
+    max-width: 100%;
+  }
+
+  .text-ellipsis {
+    text-overflow: ellipsis;
   }
 }
