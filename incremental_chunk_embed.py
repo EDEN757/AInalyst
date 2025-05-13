@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Incremental SEC EDGAR 10-K Chunk, FAISS Embedder & Retriever
+Incremental SEC EDGAR Chunk, FAISS Embedder & Retriever
 
 - One-time or incremental embed build.
 - Append-only: skips already-indexed chunks.
@@ -15,9 +15,11 @@ import tiktoken
 import faiss
 import numpy as np
 
-# Load API key
+# Load OpenAI API key from .env or environment
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    raise RuntimeError("OPENAI_API_KEY not set in environment or .env file")
 
 # Configuration
 EMBED_MODEL    = "text-embedding-3-small"
@@ -87,6 +89,7 @@ def update_embeddings():
     new_chunks = []
     new_entries = []
 
+    # Walk through all filings in data/
     for ticker in os.listdir(DATA_DIR):
         tdir = os.path.join(DATA_DIR, ticker)
         if not os.path.isdir(tdir):
@@ -95,10 +98,11 @@ def update_embeddings():
             if not fname.endswith('.json'):
                 continue
             record = json.load(open(os.path.join(tdir, fname)))
-            accession = record['accession']
+            accession = record.get('accession')
             filing_date = record.get('filing_date', '')
             full_text = record.get('text', '')
 
+            # Split into chunks
             chunks = chunk_text(full_text)
             for idx, chunk in enumerate(chunks):
                 key = (ticker, accession, idx)
@@ -110,7 +114,9 @@ def update_embeddings():
                     'ticker': ticker,
                     'accession': accession,
                     'chunk_index': idx,
-                    'filing_date': filing_date
+                    'filing_date': filing_date,
+                    # include form if needed
+                    'form': record.get('form')
                 })
                 next_id += 1
 
@@ -143,27 +149,23 @@ def load_chunk_text(entry: dict) -> str:
     """Given a metadata entry, re-load and return the exact chunk text."""
     path = os.path.join(DATA_DIR, entry['ticker'], f"{entry['accession']}.json")
     record = json.load(open(path))
-    chunks = chunk_text(record['text'])
+    chunks = chunk_text(record.get('text',''))
     return chunks[entry['chunk_index']]
 
 
 def retrieve(query: str, k: int = K_RETRIEVE) -> list[dict]:
     """Return top-k metadata entries for a query."""
-    # Ensure index & metadata are loaded
     metadata = json.load(open(METADATA_FILE))
     index = faiss.read_index(INDEX_FILE)
 
-    # Embed query
-    qe_resp = openai.embeddings.create(input=[query], model=EMBED_MODEL)
-    q_emb = qe_resp.data[0].embedding
+    q_emb = openai.embeddings.create(input=[query], model=EMBED_MODEL).data[0].embedding
     arr = np.array([q_emb], dtype='float32')
     faiss.normalize_L2(arr)
 
-    # Search
     distances, ids = index.search(arr, k)
     hits = []
     for vid in ids[0]:
-        if vid < 0 or vid >= len(metadata):
+        if vid < 0:
             continue
         hits.append(metadata[vid])
     return hits

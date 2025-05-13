@@ -1,9 +1,12 @@
+#!/usr/bin/env python3
+r"""
+SEC EDGAR 10-K/10-Q Downloader for RAG Projects
 
-"""
-SEC EDGAR 10-K Downloader for RAG Projects
+Usage:
+    python download_filings.py tickers.csv --user-agent "Name email"
 
-This script reads a CSV of tickers with date ranges and downloads 10-K filings
-from the SEC EDGAR API. Filings are saved as JSON files suitable for RAG ingestion.
+Produces:
+    data/<TICKER>/<ACCESSION>.json
 """
 
 import os
@@ -14,193 +17,187 @@ import argparse
 import logging
 import requests
 import re
+import html
 from datetime import datetime
 from dateutil.parser import parse as parse_date
 
-# Attempt to import BeautifulSoup for HTML cleaning
 try:
     from bs4 import BeautifulSoup
 except ImportError:
     BeautifulSoup = None
 
-# URL for ticker to CIK mapping
-MAPPING_URL = "https://www.sec.gov/files/company_tickers.json"
+WANTED_FORMS = ["10-K", "10-Q"]
+MAPPING_URL   = "https://www.sec.gov/files/company_tickers.json"
 
-def load_ticker_cik_mapping(mapping_file, user_agent):
+def load_ticker_cik_mapping(mapping_file: str, user_agent: str) -> dict[str,str]:
     if not os.path.exists(mapping_file):
-        logging.info(f"Downloading ticker->CIK mapping from {MAPPING_URL}")
-        resp = requests.get(MAPPING_URL, headers={"User-Agent": user_agent})
-        resp.raise_for_status()
+        logging.info(f"Downloading ticker→CIK mapping from {MAPPING_URL}")
+        r = requests.get(MAPPING_URL, headers={"User-Agent": user_agent})
+        r.raise_for_status()
         with open(mapping_file, "w") as f:
-            f.write(resp.text)
-    with open(mapping_file) as f:
-        data = json.load(f)
+            f.write(r.text)
+    data = json.load(open(mapping_file))
     entries = data.values() if isinstance(data, dict) else data
-    mapping = {e["ticker"].upper(): str(e["cik_str"]) for e in entries}
-    return mapping
+    return {e["ticker"].upper(): str(e["cik_str"]) for e in entries}
 
-def fetch_company_submissions(pad_cik, user_agent):
+def fetch_company_submissions(pad_cik: str, user_agent: str) -> dict:
     url = f"https://data.sec.gov/submissions/CIK{pad_cik}.json"
-    logging.info(f"Fetching company submissions for CIK {pad_cik}")
-    resp = requests.get(url, headers={"User-Agent": user_agent})
-    resp.raise_for_status()
-    return resp.json()
+    logging.info(f"Fetching submissions for CIK {pad_cik}")
+    r = requests.get(url, headers={"User-Agent": user_agent})
+    r.raise_for_status()
+    return r.json()
 
-def extract_filing_text(raw_text):
+def clean_filing_text(text: str) -> str:
+    r"""
+    1. Decode *all* \uXXXX escapes → real Unicode
+    2. Fix mojibake (latin-1→utf-8)
+    3. Remove checkbox symbols
+    4. Strip boilerplate (checkbox paragraphs, rule definitions)
+    5. Collapse whitespace
+    6. Unescape HTML entities
     """
-    Clean raw filing text by:
-      1. Extracting only the 10-K <TEXT> portion
-      2. Removing XBRL tags
-      3. Stripping HTML
-      4. Chopping everything before the main header marker
-      5. Collapsing whitespace
-    Returns plain text suitable for RAG.
-    """
-    # 1) Split by <DOCUMENT> and find the 10-K section
-    docs = raw_text.split("<DOCUMENT>")
-    tenk = None
-    for doc in docs:
-        if "<TYPE>10-K" in doc:
-            tenk = doc
-            break
-    if tenk and "<TEXT>" in tenk:
-        tenk = tenk.split("<TEXT>", 1)[1]
-    else:
-        tenk = raw_text
+    # decode *any* \uXXXX
+    text = text.encode("utf-8").decode("unicode_escape", errors="ignore")
+    # fix mojibake
+    try:
+        text = text.encode("latin-1").decode("utf-8", errors="ignore")
+    except Exception:
+        pass
+    # remove checkboxes
+    text = re.sub(r"[\u2610\u2611\u2612]", "", text)
+    # boilerplate
+    for pat in [
+        r"Indicate by check mark.*?Exchange Act\.",
+        r"See the definitions of .*? in Rule .*?\."
+    ]:
+        text = re.sub(pat, "", text, flags=re.IGNORECASE|re.DOTALL)
+    # whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+    return html.unescape(text)
 
-    # 2) Remove inline XBRL tags
-    cleaned = re.sub(r'<ix:[^>]+>', '', tenk)
-    cleaned = re.sub(r'</ix:[^>]+>', '', cleaned)
-
-    # 3) Remove HTML markup
-    if BeautifulSoup:
-        soup = BeautifulSoup(cleaned, 'html.parser')
-        text = soup.get_text(separator='\n')
-    else:
-        text = re.sub(r'<[^>]+>', '', cleaned)
-
-    # 4) Chop before header marker
-    # Common marker: "UNITED STATES SECURITIES AND EXCHANGE COMMISSION"
+def extract_filing_text(raw: str, form_type: str) -> str:
+    fragments = []
+    # markers to trim front
     markers = [
+        f"FORM {form_type}",
         "UNITED STATES SECURITIES AND EXCHANGE COMMISSION",
-        "FORM 10-K",
-        "ANNUAL REPORT"
+        "ANNUAL REPORT", "QUARTERLY REPORT"
     ]
-    lower = text.lower()
-    start_idx = None
-    for m in markers:
-        pos = lower.find(m.lower())
-        if pos != -1:
-            start_idx = pos
-            break
-    if start_idx is not None:
-        text = text[start_idx:]
+    for doc in raw.split("<DOCUMENT>")[1:]:
+        m = re.search(r"<TYPE>\s*([^\s<]+)", doc, flags=re.IGNORECASE)
+        if not m or m.group(1).upper() != form_type:
+            continue
+        body = doc.split("<TEXT>",1)[1] if "<TEXT>" in doc else doc
+        # strip inline XBRL
+        body = re.sub(r"<ix:[^>]+?>", "", body, flags=re.IGNORECASE)
+        body = re.sub(r"</ix:[^>]+?>", "", body, flags=re.IGNORECASE)
+        # strip HTML/XML
+        if BeautifulSoup:
+            text = BeautifulSoup(body, "html.parser").get_text(separator=" ")
+        else:
+            text = re.sub(r"<[^>]+>", " ", body)
+        text = re.sub(r"\s+", " ", text).strip()
+        # trim to first marker
+        lo = text.lower()
+        for mk in markers:
+            i = lo.find(mk.lower())
+            if i != -1:
+                text = text[i:]
+                break
+        # drop before Item 1.
+        it = re.search(r"\bITEM\s+1[A-Z]?\.", text, flags=re.IGNORECASE)
+        if it:
+            text = text[it.start():]
+        fragments.append(clean_filing_text(text))
+    return "\n\n---\n\n".join(fragments)
 
-    # 5) Collapse whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
-
-def parse_csv(csv_file):
+def parse_csv(csv_file: str) -> list[dict]:
     rows = []
     with open(csv_file, newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            ticker = row.get("ticker", "").upper().strip()
-            start = row.get("start_date", "").strip()
-            end = row.get("end_date", "").strip()
-            start_date = parse_date(start).date() if start else None
-            end_date   = parse_date(end).date()   if end   else None
+        rd = csv.reader(f)
+        next(rd, None)
+        for row in rd:
+            if not row or row[0].startswith("#"): continue
+            ticker = row[0].upper().strip()
+            sd = parse_date(row[1]).date() if row[1].strip() else None
+            ed = parse_date(row[2]).date() if row[2].strip() else None
+            ff = row[3].strip().upper()
+            if not ff or ff=="ALL":
+                forms = WANTED_FORMS.copy()
+            else:
+                parts = re.split(r"[;,]", ff)
+                forms = [p for p in parts if p in WANTED_FORMS]
             rows.append({
                 "ticker": ticker,
-                "start_date": start_date,
-                "end_date": end_date
+                "start_date": sd,
+                "end_date": ed,
+                "forms": forms
             })
     return rows
 
 def main():
-    parser = argparse.ArgumentParser(description="Download 10-K filings from SEC EDGAR for RAG.")
-    parser.add_argument("csv_file", help="CSV file with columns: ticker,start_date,end_date")
-    parser.add_argument("--output-dir", default="data", help="Directory to save filings")
-    parser.add_argument("--mapping-file", default="company_tickers.json", help="Ticker->CIK mapping JSON file")
-    parser.add_argument("--user-agent", required=True, help="User-Agent header for SEC requests")
-    parser.add_argument("--force", action="store_true", help="Re-download filings even if JSON exists")
-    args = parser.parse_args()
+    p = argparse.ArgumentParser(description="Download SEC 10-K/10-Q filings")
+    p.add_argument("csv_file", help="CSV: ticker,start_date,end_date,forms")
+    p.add_argument("--output-dir",   default="data",                 help="Where to save")
+    p.add_argument("--mapping-file", default="company_tickers.json", help="Ticker→CIK JSON")
+    p.add_argument("--user-agent",   required=True,                  help="SEC User-Agent")
+    p.add_argument("--force",        action="store_true",             help="Overwrite existing")
+    args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-    rows = parse_csv(args.csv_file)
-    logging.info(f"Processing {len(rows)} tickers from {args.csv_file}")
-
+    tasks   = parse_csv(args.csv_file)
     mapping = load_ticker_cik_mapping(args.mapping_file, args.user_agent)
 
-    for entry in rows:
-        ticker = entry["ticker"]
-        start_date = entry["start_date"]
-        end_date   = entry["end_date"]
-
-        cik_str = mapping.get(ticker)
-        if not cik_str:
-            logging.warning(f"Ticker {ticker} not found in mapping, skipping.")
+    for t in tasks:
+        ticker, start, end, want = t["ticker"], t["start_date"], t["end_date"], set(t["forms"])
+        cik = mapping.get(ticker)
+        if not cik:
+            logging.warning(f"{ticker} not in mapping—skipping")
             continue
 
-        pad_cik = cik_str.zfill(10)
-        submissions = fetch_company_submissions(pad_cik, args.user_agent)
+        pad = cik.zfill(10)
+        subs = fetch_company_submissions(pad, args.user_agent)
+        recent = subs.get("filings",{}).get("recent",{})
+        forms  = recent.get("form",[])
+        dates  = recent.get("filingDate",[])
+        accs   = recent.get("accessionNumber",[])
 
-        recent = submissions.get("filings", {}).get("recent", {})
-        forms = recent.get("form", [])
-        dates = recent.get("filingDate", [])
-        accessions = recent.get("accessionNumber", [])
-        primary_docs = recent.get("primaryDocument", [])
+        outdir = os.path.join(args.output_dir, ticker)
+        os.makedirs(outdir, exist_ok=True)
 
-        total_10k = sum(1 for f in forms if f == "10-K")
-        logging.info(f"{ticker}: found {total_10k} total 10-K filings in index")
+        for form, ds, acc in zip(forms, dates, accs):
+            fm = form.upper()
+            if fm not in want: continue
+            fd = datetime.strptime(ds, "%Y-%m-%d").date()
+            if (start and fd<start) or (end and fd> end): continue
 
-        output_dir = os.path.join(args.output_dir, ticker)
-        os.makedirs(output_dir, exist_ok=True)
-
-        for idx, (form, date_str, accession) in enumerate(zip(forms, dates, accessions)):
-            if form != "10-K":
+            acc_nd = acc.replace("-","")
+            url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc_nd}/{acc}.txt"
+            dest= os.path.join(outdir, f"{acc}.json")
+            if os.path.exists(dest) and not args.force:
+                logging.info(f"{dest} exists—skipping")
                 continue
 
-            filing_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-            if start_date and filing_date < start_date:
-                continue
-            if end_date   and filing_date > end_date:
-                continue
-
-            filename = f"{accession}.json"
-            dest_path = os.path.join(output_dir, filename)
-
-            if os.path.exists(dest_path) and not args.force:
-                logging.info(f"{dest_path} already exists, skipping.")
-                continue
-
-            directory_cik = str(int(cik_str))
-            acc_nodash = accession.replace("-", "")
-            primary_doc = primary_docs[idx] if idx < len(primary_docs) else f"{acc_nodash}.txt"
-            doc_url = f"https://www.sec.gov/Archives/edgar/data/{directory_cik}/{acc_nodash}/{primary_doc}"
-            logging.info(f"Downloading {doc_url}")
-
+            logging.info(f"Downloading {ticker} {fm} @ {ds}")
             try:
-                resp = requests.get(doc_url, headers={"User-Agent": args.user_agent})
-                resp.raise_for_status()
-                raw_text = resp.text
-                text = extract_filing_text(raw_text)
-                record = {
-                    "ticker": ticker,
-                    "cik": pad_cik,
-                    "accession": accession,
-                    "filing_date": date_str,
-                    "form": form,
-                    "document_url": doc_url,
-                    "text": text
+                r = requests.get(url, headers={"User-Agent": args.user_agent})
+                r.raise_for_status()
+                txt = extract_filing_text(r.text, form_type=fm)
+                rec = {
+                    "ticker":      ticker,
+                    "cik":         pad,
+                    "accession":   acc,
+                    "filing_date": ds,
+                    "form":        fm,
+                    "url":         url,
+                    "text":        txt
                 }
-                with open(dest_path, "w") as f:
-                    json.dump(record, f, indent=2)
-                logging.info(f"Saved filing to {dest_path}")
+                # write real Unicode (no \u escapes)
+                with open(dest, "w", encoding="utf-8") as o:
+                    json.dump(rec, o, indent=2, ensure_ascii=False)
                 time.sleep(0.1)
             except Exception as e:
-                logging.error(f"Failed to download {doc_url}: {e}")
+                logging.error(f"Failed {ticker} {fm}@{ds}: {e}")
 
 if __name__ == "__main__":
     main()
