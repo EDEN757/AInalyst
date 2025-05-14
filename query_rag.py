@@ -3,21 +3,27 @@
 query_rag.py
 
 Given a user query, embed it, search the FAISS index, and print
-the top-k most relevant 10-K text chunks (along with their metadata).
+the top-k most relevant chunks (along with their metadata).
+Works over any SEC filing type you’ve indexed (10-K, 10-Q, etc).
 """
 
 import os
 import json
+import logging
+import argparse
 from dotenv import load_dotenv
 import openai
 import tiktoken
 import faiss
 import numpy as np
-import argparse
 
-# ─── Load API Key ───────────────────────────────────────────────────────────────
+# ─── Load & validate API Key ────────────────────────────────────────────────────
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    raise RuntimeError(
+        "OPENAI_API_KEY not set. Please define it in your environment or .env file."
+    )
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 EMBED_MODEL   = "text-embedding-3-small"
@@ -49,9 +55,11 @@ def chunk_text(text: str,
 def load_chunk_text(entry: dict) -> str:
     """
     Given one metadata entry, re-load its JSON and return the exact chunk text.
+    Raises FileNotFoundError if the file is missing.
     """
     path = os.path.join(DATA_DIR, entry["ticker"], f"{entry['accession']}.json")
-    record = json.load(open(path, "r"))
+    with open(path, "r") as f:
+        record = json.load(f)
     chunks = chunk_text(record["text"])
     return chunks[entry["chunk_index"]]
 
@@ -61,10 +69,12 @@ def retrieve(query: str, k: int = DEFAULT_K) -> list[dict]:
     Returns a list of dicts: metadata + 'text' + 'score'.
     """
     # 1) Load index & metadata
+    if not os.path.exists(METADATA_FILE) or not os.path.exists(INDEX_FILE):
+        raise RuntimeError("Index or metadata file not found. Run your embed step first.")
     metadata = json.load(open(METADATA_FILE, "r"))
     index    = faiss.read_index(INDEX_FILE)
 
-    # 2) Embed query (v1+ API)
+    # 2) Embed query
     qresp = openai.embeddings.create(model=EMBED_MODEL, input=[query])
     q_emb = qresp.data[0].embedding
     arr   = np.array([q_emb], dtype="float32")
@@ -78,15 +88,21 @@ def retrieve(query: str, k: int = DEFAULT_K) -> list[dict]:
             continue
         entry = metadata[vid].copy()
         entry["score"] = float(distances[0][rank])
-        entry["text"]  = load_chunk_text(entry)
+        # load the text chunk, skipping if the file is missing
+        try:
+            entry["text"] = load_chunk_text(entry)
+        except FileNotFoundError:
+            logging.warning(f"Missing file for {entry['ticker']}/{entry['accession']}.json – skipping this hit.")
+            continue
         hits.append(entry)
     return hits
 
 def main():
-    p = argparse.ArgumentParser(description="RAG retrieval over SEC 10-K chunks")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    p = argparse.ArgumentParser(description="RAG retrieval over SEC filing chunks")
     p.add_argument("--query", "-q", required=True, help="Your natural-language question")
     p.add_argument("--k",      "-k", type=int, default=DEFAULT_K,
-                   help="Number of chunks to retrieve (default: 5)")
+                   help=f"Number of chunks to retrieve (default: {DEFAULT_K})")
     args = p.parse_args()
 
     results = retrieve(args.query, args.k)
@@ -99,7 +115,10 @@ def main():
         print(f"Ticker     : {entry['ticker']}")
         print(f"Accession  : {entry['accession']}")
         print(f"Chunk index: {entry['chunk_index']}")
-        print(f"Filing date: {entry['filing_date']}\n")
+        print(f"Filing date: {entry['filing_date']}")
+        if entry.get("form"):
+            print(f"Form       : {entry['form']}")
+        print()
         print(entry["text"])
         print("-" * 80)
 
