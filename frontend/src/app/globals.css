@@ -45,7 +45,9 @@
 
 :root {
   --font-sans:
-    var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji";
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --radius: 0.625rem;
   --background: #f4f6f8;
@@ -151,6 +153,13 @@
   }
 }
 
+/* Import Orbitron font for futuristic text */
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap");
+
+.font-orbitron {
+  font-family: "Orbitron", sans-serif;
+}
+
 @keyframes pulse-glow {
   0% {
     filter: drop-shadow(0 0 10px rgba(100, 220, 255, 0.8));
@@ -170,4 +179,74 @@
 /* Custom cursor for the hero section */
 .hero-cursor {
   cursor: none;
+}
+
+/* Gradient animation */
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-gradient-shift {
+  background-size: 200% 200%;
+  animation: gradient-shift 15s ease infinite;
+}
+
+/* Button glow animation */
+@keyframes glow {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-glow {
+  animation: glow 1.5s linear infinite;
+}
+
+/* Slower glow animation for CPU core */
+@keyframes glow-slow {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-glow-slow {
+  animation: glow-slow 4s linear infinite;
+}
+
+/* Scanlines effect */
+.scanlines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 15;
+  background: linear-gradient(to bottom, transparent 50%, rgba(0, 0, 0, 0.3) 50%);
+  background-size: 100% 4px;
+  animation: scanlines 0.5s linear infinite;
+}
+
+@keyframes scanlines {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 4px;
+  }
 }

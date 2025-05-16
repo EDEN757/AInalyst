@@ -1,63 +1,21 @@
 "use client"
 
 import type React from "react"
+
 import { useState, useRef, useEffect } from "react"
-import {
-  Send,
-  Bot,
-  User,
-  FileText,
-  BarChart3,
-  TrendingUp,
-  HelpCircle,
-  ChevronRight,
-  Maximize2,
-  Minimize2,
-  ArrowLeft,
-  Copy,
-  CheckCheck,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Badge } from "@/components/ui/badge"
-import { ThemeToggle } from "@/components/theme-toggle"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
+import { MessageSquare, ArrowRight, BarChart4, Database, BrainCircuit } from "lucide-react"
 import { cn } from "@/lib/utils"
-
-interface ContextItem {
-  ticker: string
-  accession: string
-  chunk_index: number
-  filing_date: string
-  score: number
-  text: string
-}
-
-interface Message {
-  role: "user" | "assistant"
-  content: string
-  context?: ContextItem[]
-}
-
-const sampleQuestions = [
-  "What were Apple's revenue trends in the last fiscal year?",
-  "Explain Microsoft's cloud strategy based on their financial reports",
-  "What risks did Tesla identify in their most recent filing?",
-  "Compare Amazon's and Walmart's gross margins",
-]
+import { MotherboardBackground } from "@/components/motherboard-background"
+import Link from "next/link"
 
 export default function Home() {
-  const [showChat, setShowChat] = useState(false)
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [isFullScreen, setIsFullScreen] = useState(false)
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [loadingChat, setLoadingChat] = useState(false)
+  const [isTransitioning, setIsTransitioning] = useState(false)
+  const [scrollY, setScrollY] = useState(0)
+  const heroRef = useRef<HTMLDivElement>(null)
+  const [flickerState, setFlickerState] = useState(1)
 
   // Track mouse position for spotlight effect
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -67,418 +25,316 @@ export default function Home() {
     })
   }
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
-
+  // Track scroll position
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    const handleScroll = () => {
+      setScrollY(window.scrollY)
+    }
 
-  // Focus input when chat is shown
+    window.addEventListener("scroll", handleScroll)
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
+
+  // Subtle text flicker effect
   useEffect(() => {
-    if (showChat) {
+    const flickerInterval = setInterval(() => {
+      // Random flicker effect - mostly at full opacity, occasionally flickers
+      const newFlickerState = Math.random() > 0.92 ? Math.random() * 0.4 + 0.6 : 1
+      setFlickerState(newFlickerState)
+    }, 100)
+
+    return () => clearInterval(flickerInterval)
+  }, [])
+
+  const handleStartChat = () => {
+    setLoadingChat(true)
+    setTimeout(() => {
+      setIsTransitioning(true)
       setTimeout(() => {
-        inputRef.current?.focus()
-      }, 100)
-    }
-  }, [showChat])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim()) return
-
-    // Add user message to chat
-    const userMessage: Message = { role: "user", content: input }
-    setMessages((prev) => [...prev, userMessage])
-    setInput("")
-    setIsLoading(true)
-
-    try {
-      // Send request to the FastAPI backend
-      const response = await fetch("http://127.0.0.1:8000/ask", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          query: input,
-          k: 5,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to get response")
-      }
-
-      const data = await response.json()
-
-      // Add assistant message with context
-      const assistantMessage: Message = {
-        role: "assistant",
-        content: data.answer,
-        context: data.context,
-      }
-
-      setMessages((prev) => [...prev, assistantMessage])
-    } catch (error) {
-      console.error("Error:", error)
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Sorry, I encountered an error processing your request. Please try again.",
-        },
-      ])
-    } finally {
-      setIsLoading(false)
-    }
+        window.location.href = "/chat"
+        setIsTransitioning(false)
+        setLoadingChat(false)
+      }, 1000)
+    }, 1500)
   }
 
-  const handleSampleQuestion = (question: string) => {
-    setInput(question)
-    inputRef.current?.focus()
-  }
+  // Calculate spotlight opacity based on scroll position
+  const spotlightOpacity = Math.max(0, 1 - scrollY / 300)
 
-  const toggleFullScreen = () => {
-    setIsFullScreen(!isFullScreen)
-  }
+  // Calculate content opacity based on scroll position
+  const contentOpacity = Math.min(1, (scrollY - 100) / 300)
 
-  const copyToClipboard = (text: string, index: number) => {
-    navigator.clipboard.writeText(text)
-    setCopiedIndex(index)
-    setTimeout(() => setCopiedIndex(null), 2000)
-  }
+  // Spotlight size - larger for better visibility
+  const spotlightSize = 250
 
-  if (!showChat) {
-    return (
-      <div
-        className="w-full h-screen bg-black overflow-hidden"
-        onMouseMove={handleMouseMove}
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 250 250' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0.1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-          backgroundBlendMode: "overlay",
-          backgroundColor: "#000",
-          position: "relative",
-        }}
-      >
-        {/* Spotlight mask layer that covers the entire viewport */}
-        <div
-          className="absolute inset-0 z-10 pointer-events-none"
-          style={{
-            maskImage: `radial-gradient(circle 200px at ${mousePosition.x}px ${mousePosition.y}px, white, transparent)`,
-            WebkitMaskImage: `radial-gradient(circle 200px at ${mousePosition.x}px ${mousePosition.y}px, white, transparent)`,
-            background: "transparent",
-          }}
-        >
-          {/* This div provides the glow effect that will be revealed by the mask */}
-          <div className="absolute inset-0 bg-black">
-            <div className="w-full h-full flex items-center justify-center">
+  return (
+    <div className="min-h-screen bg-black text-white overflow-x-hidden">
+      {/* Hero section with spotlight effect */}
+      <div ref={heroRef} className="relative w-full h-screen overflow-hidden" onMouseMove={handleMouseMove}>
+        {/* Motherboard background with animated cables */}
+        <MotherboardBackground />
+
+        {/* CPU core with AInalyst text - on same layer as motherboard */}
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+          <div className="relative">
+            <motion.div
+              className="relative backdrop-blur-md bg-black/30 border border-cyan-500/50 rounded-md p-8 shadow-[0_0_30px_rgba(100,220,255,0.3)] overflow-hidden"
+              animate={{
+                boxShadow: [
+                  "0 0 30px rgba(100,220,255,0.3)",
+                  "0 0 40px rgba(100,220,255,0.5)",
+                  "0 0 30px rgba(100,220,255,0.3)",
+                ],
+              }}
+              transition={{
+                duration: 3,
+                repeat: Number.POSITIVE_INFINITY,
+                repeatType: "reverse",
+              }}
+            >
+              {/* CPU grid lines */}
+              <div className="absolute inset-0 grid grid-cols-8 grid-rows-8 opacity-30">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div
+                    key={`h-${i}`}
+                    className="w-full h-px bg-cyan-400 transform translate-y-[calc(100%*var(--tw-translate-y))]"
+                    style={{ "--tw-translate-y": i / 8 } as React.CSSProperties}
+                  />
+                ))}
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div
+                    key={`v-${i}`}
+                    className="h-full w-px bg-cyan-400 transform translate-x-[calc(100%*var(--tw-translate-x))]"
+                    style={{ "--tw-translate-x": i / 8 } as React.CSSProperties}
+                  />
+                ))}
+              </div>
+
+              {/* Animated glow inside the box */}
+              <div className="absolute inset-0 opacity-30">
+                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/0 via-cyan-500/30 to-cyan-500/0 -translate-x-[100%] animate-glow-slow"></div>
+              </div>
+
+              {/* Scanlines overlay */}
+              <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-10">
+                <div className="scanlines"></div>
+              </div>
+
+              {/* CPU pins/connectors - more visible now */}
+              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-3/4 h-2 flex justify-around">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <div key={`pin-${i}`} className="w-1 h-full bg-cyan-400/70 rounded-b-sm"></div>
+                ))}
+              </div>
+
+              <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-3/4 h-2 flex justify-around">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <div key={`pin-top-${i}`} className="w-1 h-full bg-cyan-400/70 rounded-t-sm"></div>
+                ))}
+              </div>
+
+              <div className="absolute -left-2 top-1/2 transform -translate-y-1/2 h-3/4 w-2 flex flex-col justify-around">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={`pin-left-${i}`} className="h-1 w-full bg-cyan-400/70 rounded-l-sm"></div>
+                ))}
+              </div>
+
+              <div className="absolute -right-2 top-1/2 transform -translate-y-1/2 h-3/4 w-2 flex flex-col justify-around">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={`pin-right-${i}`} className="h-1 w-full bg-cyan-400/70 rounded-r-sm"></div>
+                ))}
+              </div>
+
               <h1
-                className="text-[15vmin] md:text-[20vmin] font-bold font-sans tracking-tighter select-none"
+                className="text-[15vmin] font-orbitron font-bold tracking-wider select-none"
                 style={{
                   color: "transparent",
-                  WebkitTextStroke: "1px rgba(100, 220, 255, 0.9)",
-                  filter: "drop-shadow(0 0 10px rgba(100, 220, 255, 0.8))",
-                  textShadow: "0 0 20px rgba(100, 220, 255, 0.6), 0 0 40px rgba(100, 220, 255, 0.4)",
+                  WebkitTextStroke: `1px rgba(100, 220, 255, ${flickerState * 0.9})`,
+                  filter: `drop-shadow(0 0 10px rgba(100, 220, 255, ${flickerState * 0.8}))`,
+                  textShadow: `0 0 20px rgba(100, 220, 255, ${flickerState * 0.6}), 0 0 40px rgba(100, 220, 255, ${flickerState * 0.4})`,
+                  opacity: flickerState,
                 }}
               >
                 AInalyst
               </h1>
-            </div>
+            </motion.div>
           </div>
         </div>
 
-        {/* Base layer with invisible text */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <h1
-            className="text-[15vmin] md:text-[20vmin] font-bold font-sans tracking-tighter select-none"
+        {/* Spotlight mask layer - unified for all elements */}
+        <div
+          className="absolute inset-0 z-20 pointer-events-none"
+          style={{
+            opacity: spotlightOpacity,
+          }}
+        >
+          {/* This div provides the actual mask */}
+          <div
+            className="absolute inset-0 bg-black"
             style={{
-              color: "transparent",
-              WebkitTextStroke: "1px rgba(255, 255, 255, 0.03)",
+              maskImage: `radial-gradient(circle ${spotlightSize}px at ${mousePosition.x}px ${mousePosition.y}px, transparent, black)`,
+              WebkitMaskImage: `radial-gradient(circle ${spotlightSize}px at ${mousePosition.x}px ${mousePosition.y}px, transparent, black)`,
             }}
-          >
-            AInalyst
-          </h1>
+          ></div>
         </div>
 
-        {/* Chat button positioned at the bottom - outside the spotlight effect */}
-        <div className="absolute bottom-20 w-full flex justify-center z-20">
+        {/* Glassmorphism CTA button */}
+        <div className="absolute bottom-20 w-full flex justify-center z-30" style={{ opacity: spotlightOpacity }}>
           <motion.button
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5, duration: 0.5 }}
-            onClick={() => setShowChat(true)}
-            className="bg-transparent border border-cyan-500 text-cyan-400 px-12 py-4 rounded-md text-xl font-medium hover:bg-cyan-900/20 transition-colors duration-300 shadow-[0_0_20px_rgba(100,220,255,0.3)]"
+            transition={{ delay: 0.8, duration: 0.7 }}
+            onClick={handleStartChat}
+            disabled={loadingChat}
+            className={cn(
+              "group relative overflow-hidden backdrop-blur-md bg-black/30 border border-cyan-500/50 text-white px-8 py-4 rounded-md font-medium transition-all duration-300",
+              "hover:bg-black/40 hover:border-cyan-500/70 hover:shadow-[0_0_25px_rgba(100,220,255,0.5)]",
+              "focus:outline-none focus:ring-2 focus:ring-cyan-500/50",
+              "disabled:opacity-80 disabled:pointer-events-none",
+            )}
           >
-            Chat
+            {/* Button glow effect */}
+            <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-cyan-500/0 via-cyan-500/40 to-cyan-500/0 -translate-x-[100%] group-hover:animate-glow"></span>
+
+            <span className="relative flex items-center gap-2">
+              {loadingChat ? (
+                <>
+                  <div className="flex space-x-1 items-center">
+                    <div
+                      className="h-2 w-2 bg-white rounded-full animate-bounce"
+                      style={{ animationDelay: "0ms" }}
+                    ></div>
+                    <div
+                      className="h-2 w-2 bg-white rounded-full animate-bounce"
+                      style={{ animationDelay: "150ms" }}
+                    ></div>
+                    <div
+                      className="h-2 w-2 bg-white rounded-full animate-bounce"
+                      style={{ animationDelay: "300ms" }}
+                    ></div>
+                  </div>
+                  <span className="ml-2">Loading AInalyst...</span>
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="h-5 w-5" />
+                  <span>Enter AInalyst</span>
+                  <ArrowRight className="h-5 w-5 ml-1" />
+                </>
+              )}
+            </span>
           </motion.button>
         </div>
-      </div>
-    )
-  }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-gray-950 dark:to-[#0d1117] transition-colors duration-300 font-sans">
-      <div className="w-full px-5vw py-6 h-[calc(100vh-2rem)]">
-        <header className="flex justify-between items-center mb-6 max-w-[1600px] mx-auto">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowChat(false)}
-              className="text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800"
-            >
-              <ArrowLeft className="h-5 w-5" />
-              <span className="sr-only">Back to intro</span>
-            </Button>
-            <div>
-              <h1 className="text-3xl font-bold text-slate-800 dark:text-gray-100">AInalyst</h1>
-              <p className="text-slate-500 dark:text-gray-400 text-sm">
-                Your intelligent assistant for analyzing financial data
-              </p>
-            </div>
-          </div>
-          <ThemeToggle />
-        </header>
-
+        {/* Scroll indicator */}
         <div
-          className={`grid ${isFullScreen ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-[1fr_350px]"} gap-6 h-[calc(100%-4rem)] max-w-[1600px] mx-auto`}
+          className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex flex-col items-center text-white/50 animate-pulse z-30"
+          style={{ opacity: spotlightOpacity }}
         >
-          <div className="h-full flex flex-col">
-            <Card className="flex-1 flex flex-col shadow-md border-slate-200 dark:border-gray-800 dark:bg-[#1a1d23] overflow-hidden">
-              <CardHeader className="bg-white dark:bg-[#1a1d23] border-b border-slate-100 dark:border-gray-800 py-4 px-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-blue-600 dark:bg-blue-700 p-1.5 rounded-lg">
-                      <Bot className="h-5 w-5 text-white" />
-                    </div>
-                    <CardTitle className="text-xl font-semibold text-slate-800 dark:text-gray-100">Chat</CardTitle>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className="bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800"
-                    >
-                      Financial Analysis
-                    </Badge>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={toggleFullScreen}
-                      className="border-slate-200 text-slate-600 hover:text-slate-900 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                    >
-                      {isFullScreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                      <span className="sr-only">Toggle fullscreen</span>
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
+          <span className="text-xs mb-2">Scroll to learn more</span>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M12 5L12 19M12 19L19 12M12 19L5 12"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      </div>
 
-              <ScrollArea className="flex-1 p-6 h-full overflow-hidden dark:bg-[#1a1d23]">
-                <div className="space-y-6 pb-4 w-full max-w-[1200px] mx-auto">
-                  {messages.length === 0 ? (
-                    <div className="text-center text-slate-500 dark:text-gray-400 my-12">
-                      <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center">
-                        <Bot className="h-10 w-10 text-blue-600 dark:text-blue-400" />
-                      </div>
-                      <p className="text-2xl font-semibold mb-3 text-slate-700 dark:text-gray-200">
-                        Welcome to AInalyst
-                      </p>
-                      <p className="text-slate-500 dark:text-gray-400 max-w-md mx-auto">
-                        Ask me anything about financial documents and public companies. I'll analyze the data and
-                        provide insights to help with your financial research.
-                      </p>
-                    </div>
-                  ) : (
-                    messages.map((message, index) => (
-                      <div
-                        key={index}
-                        className={cn("group flex", message.role === "user" ? "justify-end" : "justify-start")}
-                      >
-                        <div
-                          className={cn(
-                            "rounded-2xl p-4 break-words relative",
-                            message.role === "user"
-                              ? "bg-blue-600 dark:bg-blue-700 text-white ml-auto"
-                              : "bg-white dark:bg-[#252930] border border-slate-100 dark:border-gray-800 text-slate-800 dark:text-gray-200 mr-auto",
-                            "max-w-[70%] md:max-w-[65%]",
-                          )}
-                        >
-                          <div className="flex items-start gap-3">
-                            {message.role === "assistant" && (
-                              <div className="bg-blue-100 dark:bg-blue-900/30 p-1.5 rounded-md mt-0.5 flex-shrink-0">
-                                <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                              </div>
-                            )}
-                            {message.role === "user" && (
-                              <div className="bg-blue-500 dark:bg-blue-600 p-1.5 rounded-md mt-0.5 flex-shrink-0 order-last">
-                                <User className="h-4 w-4 text-white" />
-                              </div>
-                            )}
-                            <div className="overflow-hidden w-full">
-                              <p className="whitespace-pre-wrap overflow-wrap-anywhere overflow-hidden text-[15px] leading-relaxed">
-                                {message.content}
-                              </p>
-                              {message.context && (
-                                <div className="mt-3 text-xs border-t border-slate-200 dark:border-gray-700 pt-2 text-slate-500 dark:text-gray-400">
-                                  <p className="font-medium mb-1">{message.role === "user" ? "" : "Sources:"}</p>
-                                  {message.role === "assistant" && (
-                                    <ul className="list-disc pl-4 space-y-1">
-                                      {message.context.slice(0, 3).map((item, idx) => (
-                                        <li key={idx}>
-                                          <span className="font-medium">{item.ticker}</span> ({item.filing_date})
-                                        </li>
-                                      ))}
-                                      {message.context.length > 3 && (
-                                        <li>+ {message.context.length - 3} more sources</li>
-                                      )}
-                                    </ul>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Copy button */}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className={cn(
-                              "absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity",
-                              message.role === "user"
-                                ? "text-blue-200 hover:text-white hover:bg-blue-500"
-                                : "text-slate-400 hover:text-slate-700 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800",
-                            )}
-                            onClick={() => copyToClipboard(message.content, index)}
-                          >
-                            {copiedIndex === index ? <CheckCheck className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                            <span className="sr-only">Copy message</span>
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                  {isLoading && (
-                    <div className="flex justify-start">
-                      <div className="max-w-[70%] md:max-w-[65%] rounded-2xl p-4 bg-white dark:bg-[#252930] border border-slate-100 dark:border-gray-800 text-slate-800 dark:text-gray-200">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-blue-100 dark:bg-blue-900/30 p-1.5 rounded-md">
-                            <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                          </div>
-                          <div className="flex space-x-2">
-                            <div
-                              className="h-2.5 w-2.5 bg-blue-400 dark:bg-blue-500 rounded-full animate-bounce"
-                              style={{ animationDelay: "0ms" }}
-                            ></div>
-                            <div
-                              className="h-2.5 w-2.5 bg-blue-400 dark:bg-blue-500 rounded-full animate-bounce"
-                              style={{ animationDelay: "150ms" }}
-                            ></div>
-                            <div
-                              className="h-2.5 w-2.5 bg-blue-400 dark:bg-blue-500 rounded-full animate-bounce"
-                              style={{ animationDelay: "300ms" }}
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-              </ScrollArea>
-
-              <CardFooter className="border-t p-4 bg-slate-50 dark:bg-[#20232a] dark:border-gray-800 shadow-[0_-1px_2px_rgba(0,0,0,0.03)] dark:shadow-none">
-                <form onSubmit={handleSubmit} className="flex w-full gap-3 items-center">
-                  <Input
-                    ref={inputRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Ask about financial documents..."
-                    className="flex-1 border-slate-200 bg-white dark:border-gray-700 dark:bg-[#2d333b] dark:text-gray-200 focus-visible:ring-blue-500 dark:focus-visible:ring-blue-600 h-12 px-4 text-base"
-                    disabled={isLoading}
-                  />
-                  <Button
-                    type="submit"
-                    disabled={isLoading || !input.trim()}
-                    className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 h-12 px-5"
-                  >
-                    <Send className="h-5 w-5 mr-2" />
-                    <span>Send</span>
-                  </Button>
-                </form>
-              </CardFooter>
-            </Card>
+      {/* Content section below spotlight */}
+      <div
+        className="relative z-30 min-h-screen bg-gradient-to-b from-gray-900 to-black py-20 px-6"
+        style={{ opacity: contentOpacity }}
+      >
+        <div className="max-w-6xl mx-auto">
+          {/* Tagline and description */}
+          <div className="text-center mb-20">
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 text-white">
+              Your AI-powered gateway to financial intelligence
+            </h2>
+            <p className="text-lg md:text-xl text-gray-300 max-w-3xl mx-auto">
+              AInalyst uses Retrieval-Augmented Generation (RAG), powered by OpenAI models, to answer your financial
+              questions using real-time data from the SEC API. Ask about a company's performance, strategy, management,
+              or any other finance-related topic that comes to mind.
+            </p>
           </div>
 
-          {!isFullScreen && (
-            <div className="space-y-6">
-              <Card className="shadow-sm border-slate-200 dark:border-gray-800 dark:bg-[#1a1d23] overflow-hidden hover:shadow-md transition-shadow duration-200">
-                <CardHeader className="py-4 px-5">
-                  <CardTitle className="text-base flex items-center gap-2 text-slate-800 dark:text-gray-100">
-                    <HelpCircle className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                    Try asking about
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-5 pb-5">
-                  <div className="space-y-2.5">
-                    {sampleQuestions.map((question, index) => (
-                      <Button
-                        key={index}
-                        variant="outline"
-                        className="w-full justify-start text-left h-auto py-3 px-4 border-slate-200 dark:border-gray-700 hover:bg-slate-50 dark:hover:bg-gray-800 hover:text-blue-700 dark:hover:text-blue-400 text-slate-700 dark:text-gray-300 text-sm font-medium"
-                        onClick={() => handleSampleQuestion(question)}
-                      >
-                        <span className="truncate">{question}</span>
-                        <ChevronRight className="h-4 w-4 ml-auto flex-shrink-0 text-slate-400 dark:text-gray-500" />
-                      </Button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+          {/* Feature cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              viewport={{ once: true, margin: "-100px" }}
+              className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-8"
+            >
+              <div className="bg-cyan-900/50 p-3 rounded-lg w-12 h-12 flex items-center justify-center mb-6">
+                <BarChart4 className="h-6 w-6 text-cyan-400" />
+              </div>
+              <h3 className="text-xl font-semibold mb-3 text-white">Real-Time Insights</h3>
+              <p className="text-gray-300">Stay current with live financial data and trends.</p>
+            </motion.div>
 
-              <Card className="shadow-sm border-slate-200 dark:border-gray-800 dark:bg-[#1a1d23] overflow-hidden hover:shadow-md transition-shadow duration-200">
-                <CardHeader className="py-4 px-5">
-                  <CardTitle className="text-base flex items-center gap-2 text-slate-800 dark:text-gray-100">
-                    <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                    About AInalyst
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-5 pb-5">
-                  <p className="text-sm text-slate-600 dark:text-gray-400 mb-4 leading-relaxed">
-                    AInalyst uses advanced AI to analyze financial documents and provide insights about public
-                    companies.
-                  </p>
-                  <div className="space-y-4">
-                    <div className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-gray-800/50">
-                      <BarChart3 className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-                      <div>
-                        <h3 className="font-medium text-slate-800 dark:text-gray-200 text-sm">Financial Analysis</h3>
-                        <p className="text-xs text-slate-500 dark:text-gray-400 mt-1">
-                          Get insights on company performance and metrics
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-gray-800/50">
-                      <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-                      <div>
-                        <h3 className="font-medium text-slate-800 dark:text-gray-200 text-sm">Market Trends</h3>
-                        <p className="text-xs text-slate-500 dark:text-gray-400 mt-1">
-                          Understand market positioning and competitive landscape
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+              viewport={{ once: true, margin: "-100px" }}
+              className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-8"
+            >
+              <div className="bg-cyan-900/50 p-3 rounded-lg w-12 h-12 flex items-center justify-center mb-6">
+                <Database className="h-6 w-6 text-cyan-400" />
+              </div>
+              <h3 className="text-xl font-semibold mb-3 text-white">SEC-Backed Data</h3>
+              <p className="text-gray-300">Pulled directly from official filings and disclosures.</p>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+              viewport={{ once: true, margin: "-100px" }}
+              className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-8"
+            >
+              <div className="bg-cyan-900/50 p-3 rounded-lg w-12 h-12 flex items-center justify-center mb-6">
+                <BrainCircuit className="h-6 w-6 text-cyan-400" />
+              </div>
+              <h3 className="text-xl font-semibold mb-3 text-white">RAG + OpenAI</h3>
+              <p className="text-gray-300">
+                Trusted answers powered by Retrieval-Augmented Generation and advanced language models.
+              </p>
+            </motion.div>
+          </div>
+
+          {/* CTA section */}
+          <div className="text-center">
+            <Link
+              href="/chat"
+              className="inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-8 py-4 rounded-md font-medium transition-colors duration-300"
+            >
+              <MessageSquare className="h-5 w-5" />
+              <span>Start Using AInalyst</span>
+              <ArrowRight className="h-5 w-5 ml-1" />
+            </Link>
+          </div>
         </div>
-
-        <footer className="mt-6 text-center text-xs text-slate-400 dark:text-gray-600 max-w-[1600px] mx-auto">
-          <p>AInalyst © {new Date().getFullYear()} | Powered by AI analysis of financial documents</p>
-        </footer>
       </div>
+
+      {/* Transition overlay */}
+      <AnimatePresence>
+        {isTransitioning && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
+            className="fixed inset-0 bg-black z-50"
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
