@@ -61,7 +61,8 @@ def initialize_index():
     """Load or create FAISS index and metadata."""
     if os.path.exists(METADATA_FILE) and os.path.exists(INDEX_FILE):
         logging.info("Loading existing metadata and index...")
-        metadata = json.load(open(METADATA_FILE))
+        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
         existing_keys = {(m['ticker'], m['accession'], m['chunk_index']) for m in metadata}
         next_id = max(m['id'] for m in metadata) + 1
         index = faiss.read_index(INDEX_FILE)
@@ -77,8 +78,8 @@ def initialize_index():
 def save_index_metadata(index, metadata):
     faiss.write_index(index, INDEX_FILE)
     logging.info(f"FAISS index saved to {INDEX_FILE}.")
-    with open(METADATA_FILE, 'w') as f:
-        json.dump(metadata, f, indent=2)
+    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
     logging.info(f"Metadata saved to {METADATA_FILE}.")
 
 
@@ -97,7 +98,9 @@ def update_embeddings():
         for fname in os.listdir(tdir):
             if not fname.endswith('.json'):
                 continue
-            record = json.load(open(os.path.join(tdir, fname)))
+            path = os.path.join(tdir, fname)
+            with open(path, 'r', encoding='utf-8') as f:
+                record = json.load(f)
             accession = record.get('accession')
             filing_date = record.get('filing_date', '')
             full_text = record.get('text', '')
@@ -148,14 +151,16 @@ def update_embeddings():
 def load_chunk_text(entry: dict) -> str:
     """Given a metadata entry, re-load and return the exact chunk text."""
     path = os.path.join(DATA_DIR, entry['ticker'], f"{entry['accession']}.json")
-    record = json.load(open(path))
-    chunks = chunk_text(record.get('text',''))
+    with open(path, 'r', encoding='utf-8') as f:
+        record = json.load(f)
+    chunks = chunk_text(record.get('text', ''))
     return chunks[entry['chunk_index']]
 
 
 def retrieve(query: str, k: int = K_RETRIEVE) -> list[dict]:
     """Return top-k metadata entries for a query."""
-    metadata = json.load(open(METADATA_FILE))
+    with open(METADATA_FILE, 'r', encoding='utf-8') as f:
+        metadata = json.load(f)
     index = faiss.read_index(INDEX_FILE)
 
     q_emb = openai.embeddings.create(input=[query], model=EMBED_MODEL).data[0].embedding
