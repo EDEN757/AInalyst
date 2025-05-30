@@ -11,13 +11,6 @@ from dotenv import load_dotenv
 import openai
 import uvicorn
 
-# ─── Load environment ─────────────────────────────────────────────────────────
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-# Read desired chat model from .env (defaults to gpt-3.5-turbo)
-CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-3.5-turbo")
-
 # ─── Bring in your RAG retriever ──────────────────────────────────────────────
 from query_rag import retrieve  # returns List[dict] with keys ticker, accession, chunk_index, filing_date, score, text, form, cik, url
 
@@ -37,6 +30,8 @@ app.add_middleware(
 class AskRequest(BaseModel):
     query: str
     k: int = 5
+    api_key: str
+    chat_model: str
 
 class ContextItem(BaseModel):
     ticker: str
@@ -56,6 +51,7 @@ class AskResponse(BaseModel):
 # ─── The /ask endpoint ───────────────────────────────────────────────────────
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest):
+    openai.api_key = req.api_key
     # 1) Retrieve top-k chunks
     hits = retrieve(req.query, k=req.k)
     if not hits:
@@ -70,7 +66,7 @@ def ask(req: AskRequest):
 
     # 3) Call the OpenAI Chat Completion (v1 library)
     chat_resp = openai.chat.completions.create(
-        model=CHAT_MODEL,
+        model=req.chat_model,
         messages=messages
     )
     answer = chat_resp.choices[0].message.content
