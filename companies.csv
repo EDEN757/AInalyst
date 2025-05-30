@@ -1,4 +1,0 @@
-ticker,start_date,end_date,forms
-AAPL,2024-01-01,2024-12-31,"10-K;10-Q;CF"
-MSFT,2024-01-01,2024-12-31,ALL
-NVDA,2024-01-01,2024-12-31,"10-K"

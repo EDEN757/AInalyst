@@ -24,6 +24,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { SourceDocuments } from "@/components/source-documents"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 
@@ -212,7 +213,7 @@ export default function ChatPage() {
                     messages.map((message, index) => (
                       <div
                         key={index}
-                        className={cn("group flex", message.role === "user" ? "justify-end" : "justify-start")}
+                        className={cn("group flex flex-col", message.role === "user" ? "items-end" : "items-start")}
                       >
                         <div
                           className={cn(
@@ -238,23 +239,6 @@ export default function ChatPage() {
                               <p className="whitespace-pre-wrap overflow-wrap-anywhere overflow-hidden text-[15px] leading-relaxed">
                                 {message.content}
                               </p>
-                              {message.context && (
-                                <div className="mt-3 text-xs border-t border-slate-200 dark:border-gray-700 pt-2 text-slate-500 dark:text-gray-400">
-                                  <p className="font-medium mb-1">{message.role === "user" ? "" : "Sources:"}</p>
-                                  {message.role === "assistant" && (
-                                    <ul className="list-disc pl-4 space-y-1">
-                                      {message.context.slice(0, 3).map((item, idx) => (
-                                        <li key={idx}>
-                                          <span className="font-medium">{item.ticker}</span> ({item.filing_date})
-                                        </li>
-                                      ))}
-                                      {message.context.length > 3 && (
-                                        <li>+ {message.context.length - 3} more sources</li>
-                                      )}
-                                    </ul>
-                                  )}
-                                </div>
-                              )}
                             </div>
                           </div>
 
@@ -274,6 +258,13 @@ export default function ChatPage() {
                             <span className="sr-only">Copy message</span>
                           </Button>
                         </div>
+
+                        {/* Source Documents - only for assistant messages */}
+                        {message.role === "assistant" && message.context && (
+                          <div className="max-w-[70%] md:max-w-[65%] mr-auto">
+                            <SourceDocuments context={message.context} />
+                          </div>
+                        )}
                       </div>
                     ))
                   )}

@@ -6,7 +6,7 @@ import json
 import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 import openai
 import uvicorn
@@ -19,7 +19,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-3.5-turbo")
 
 # ─── Bring in your RAG retriever ──────────────────────────────────────────────
-from query_rag import retrieve  # returns List[dict] with keys ticker, accession, chunk_index, filing_date, score, text
+from query_rag import retrieve  # returns List[dict] with keys ticker, accession, chunk_index, filing_date, score, text, form, cik, url
 
 # ─── FastAPI setup ──────────────────────────────────────────────────────────
 app = FastAPI(
@@ -45,6 +45,9 @@ class ContextItem(BaseModel):
     filing_date: str
     score: float
     text: str
+    form: str
+    cik: str
+    url: HttpUrl
 
 class AskResponse(BaseModel):
     answer: str

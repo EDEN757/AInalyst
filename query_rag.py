@@ -52,21 +52,10 @@ def chunk_text(text: str,
         start += chunk_size - overlap
     return chunks
 
-def load_chunk_text(entry: dict) -> str:
-    """
-    Given one metadata entry, re-load its JSON and return the exact chunk text.
-    Raises FileNotFoundError if the file is missing.
-    """
-    path = os.path.join(DATA_DIR, entry["ticker"], f"{entry['accession']}.json")
-    with open(path, "r", encoding="utf-8") as f:
-        record = json.load(f)
-    chunks = chunk_text(record.get("text", ""))
-    return chunks[entry["chunk_index"]]
-
 def retrieve(query: str, k: int = DEFAULT_K) -> list[dict]:
     """
     Embed the query, search FAISS for top-k, then load chunk texts.
-    Returns a list of dicts: metadata + 'text' + 'score'.
+    Returns a list of dicts: metadata + 'text' + 'score' + form/url/cik.
     """
     # 1) Load index & metadata
     if not os.path.exists(METADATA_FILE) or not os.path.exists(INDEX_FILE):
@@ -87,17 +76,34 @@ def retrieve(query: str, k: int = DEFAULT_K) -> list[dict]:
     for rank, vid in enumerate(ids[0]):
         if vid < 0 or vid >= len(metadata):
             continue
+
+        # Copy basic metadata
         entry = metadata[vid].copy()
         entry["score"] = float(distances[0][rank])
-        # load the text chunk, skipping if the file is missing
+
+        # Load the original JSON to pull form, url, cik, and chunk text
+        path = os.path.join(DATA_DIR, entry["ticker"], f"{entry['accession']}.json")
         try:
-            entry["text"] = load_chunk_text(entry)
+            with open(path, "r", encoding="utf-8") as f:
+                record = json.load(f)
+
+            # Extract the correct chunk
+            chunks = chunk_text(record.get("text", ""))
+            entry["text"] = chunks[entry["chunk_index"]]
+
+            # Include the real form, url, and cik
+            entry["form"] = record.get("form")
+            entry["url"]  = record.get("url")
+            entry["cik"]  = record.get("cik")
+
         except FileNotFoundError:
             logging.warning(
                 f"Missing file for {entry['ticker']}/{entry['accession']}.json – skipping this hit."
             )
             continue
+
         hits.append(entry)
+
     return hits
 
 def main():
@@ -129,9 +135,9 @@ def main():
         print(f"Accession  : {entry['accession']}")
         print(f"Chunk index: {entry['chunk_index']}")
         print(f"Filing date: {entry.get('filing_date', '')}")
-        if entry.get("form"):
-            print(f"Form       : {entry['form']}")
-        print()
+        print(f"Form       : {entry.get('form', '')}")
+        print(f"CIK        : {entry.get('cik', '')}")
+        print(f"URL        : {entry.get('url', '')}\n")
         print(entry["text"])
         print("-" * 80)
 
