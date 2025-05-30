@@ -8,12 +8,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
+load_dotenv()
 import openai
 import uvicorn
 
 # ─── Bring in your RAG retriever ──────────────────────────────────────────────
 from query_rag import retrieve  # returns List[dict] with keys ticker, accession, chunk_index, filing_date, score, text, form, cik, url
-
+# Read CORS origins from CORS_ORIGINS (comma-separated), default to localhost
+origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 # ─── FastAPI setup ──────────────────────────────────────────────────────────
 app = FastAPI(
     title="10-K RAG Chatbot API",
@@ -22,7 +24,7 @@ app = FastAPI(
 )
 app.add_middleware(
   CORSMiddleware,
-  allow_origins=["http://localhost:3000"],  # your Next.js dev URL
+  allow_origins=origins,  # your Next.js dev URL
   allow_methods=["POST", "GET", "OPTIONS"],
   allow_headers=["*"],
 )

@@ -34,6 +34,9 @@ import { SourceDocuments } from "@/components/source-documents"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 
+// Base URL for backend API: overridden by Vercel env var in production
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+
 interface ContextItem {
   ticker: string
   accession: string
@@ -142,7 +145,7 @@ export default function ChatPage() {
 
     try {
       // Send request to the FastAPI backend with API key and model
-      const response = await fetch("http://127.0.0.1:8000/ask", {
+      const response = await fetch(`${API_BASE}/ask`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
