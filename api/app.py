@@ -24,9 +24,10 @@ app = FastAPI(
 )
 app.add_middleware(
   CORSMiddleware,
-  allow_origins=origins,  # your Next.js dev URL
+  allow_origins=["*"],  # Allow all origins - CHANGE THIS IN PRODUCTION
   allow_methods=["POST", "GET", "OPTIONS"],
   allow_headers=["*"],
+  allow_credentials=False,
 )
 # ─── Request/response schemas ─────────────────────────────────────────────────
 class AskRequest(BaseModel):
