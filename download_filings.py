@@ -52,7 +52,7 @@ WANTED_FORMS = ["10-K", "10-Q", "CF"]
 MAPPING_URL = "https://www.sec.gov/files/company_tickers.json"
 
 # Demo mode companies (top 5 S&P 500 by market cap)
-DEMO_COMPANIES = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"]
+DEMO_COMPANIES = ["AAPL"]
 
 # optional HTML stripper
 try:
