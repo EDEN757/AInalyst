@@ -220,7 +220,7 @@ CORS_ORIGINS=https://your-frontend-domain.com,https://your-frontend-*.vercel.app
 | `OPENAI_API_KEY` | `sk-your-openai-key` | Your private OpenAI key used for embedding generation and fallback chat completions. |
 | `START_DATE` | `2023-01-01` | Earliest filing date for download_filings.py. |
 | `MODE` | `DEMO` | Mode flag used by your ingestion scripts. |
-| `USER_AGENT` | `youremail@example.com` | Custom User-Agent when fetching SEC EDGAR filings. |
+| `USER_AGENT` | `yourname youremail@example.com` | Custom User-Agent when fetching SEC EDGAR filings. |
 | `CORS_ORIGINS` | `http://localhost:3000,https://a-inalyst.vercel.app` | Comma-separated list of allowed origins (development + production). |
 
 **Note:**
