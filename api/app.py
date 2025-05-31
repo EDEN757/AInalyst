@@ -4,8 +4,9 @@
 import os
 import json
 import logging
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 load_dotenv()
@@ -37,9 +38,19 @@ app.add_middleware(
   CORSMiddleware,
   allow_origins=all_origins,  # Allow both with and without trailing slashes
   allow_methods=["POST", "GET", "OPTIONS"],
-  allow_headers=["Content-Type", "Authorization"],
+  allow_headers=["Content-Type", "Authorization", "Origin", "Accept"],
   allow_credentials=False,
 )
+
+# Add request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    origin = request.headers.get("origin", "No origin")
+    logger.info(f"Request: {request.method} {request.url.path} from origin: {origin}")
+    logger.info(f"Headers: {dict(request.headers)}")
+    response = await call_next(request)
+    logger.info(f"Response status: {response.status_code}")
+    return response
 # ─── Request/response schemas ─────────────────────────────────────────────────
 class AskRequest(BaseModel):
     query: str
@@ -61,6 +72,18 @@ class ContextItem(BaseModel):
 class AskResponse(BaseModel):
     answer: str
     context: list[ContextItem]
+
+# ─── Explicit OPTIONS handler for /ask endpoint ─────────────────────────────
+@app.options("/ask")
+async def ask_options():
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Origin, Accept",
+        }
+    )
 
 # ─── The /ask endpoint ───────────────────────────────────────────────────────
 @app.post("/ask", response_model=AskResponse)
