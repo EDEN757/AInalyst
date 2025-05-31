@@ -15,18 +15,26 @@ import uvicorn
 # ─── Bring in your RAG retriever ──────────────────────────────────────────────
 from query_rag import retrieve  # returns List[dict] with keys ticker, accession, chunk_index, filing_date, score, text, form, cik, url
 # Read CORS origins from CORS_ORIGINS (comma-separated), default to localhost
+# In production, set CORS_ORIGINS="http://localhost:3000,https://your-vercel-app.vercel.app"
 origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+# Clean up whitespace from origins
+origins = [origin.strip() for origin in origins if origin.strip()]
 # ─── FastAPI setup ──────────────────────────────────────────────────────────
 app = FastAPI(
     title="10-K RAG Chatbot API",
     description="Retrieval-Augmented-Generation over SEC 10-K filings",
     version="0.1.0"
 )
+
+# Log CORS configuration for debugging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.info(f"CORS allowed origins: {origins}")
 app.add_middleware(
   CORSMiddleware,
-  allow_origins=["*"],  # Allow all origins - CHANGE THIS IN PRODUCTION
+  allow_origins=origins,  # Only allow specific origins
   allow_methods=["POST", "GET", "OPTIONS"],
-  allow_headers=["*"],
+  allow_headers=["Content-Type", "Authorization"],
   allow_credentials=False,
 )
 # ─── Request/response schemas ─────────────────────────────────────────────────
