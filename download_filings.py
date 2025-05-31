@@ -1,3 +1,22 @@
+r"""
+SEC EDGAR Filing Downloader for S&P 500 Companies
+
+This script downloads 10-K, 10-Q, and Company Facts for S&P 500 companies
+from the SEC EDGAR API. It's designed to run on a server and only download
+missing documents.
+
+Configuration:
+    START_DATE: Initial date for data retrieval (e.g., "2023-01-01")
+    MODE: "DEMO" (5 companies) or "FULL" (all S&P 500)
+
+Produces:
+    data/<TICKER>/<ACCESSION>.json      # for 10-K & 10-Q
+    data/<TICKER>/<TICKER>_CF.json      # for Company Facts
+"""
+
+from dotenv import load_dotenv
+load_dotenv()
+
 #!/usr/bin/env python3
 r"""
 SEC EDGAR Filing Downloader for S&P 500 Companies
@@ -20,11 +39,11 @@ from datetime import datetime, date
 from dateutil.parser import parse as parse_date
 
 # ─── CONFIGURATION ──────────────────────────────────────────────────────────────
-START_DATE = "2023-01-01"  # Change this to your desired start date
-MODE = "DEMO"              # Change to "FULL" for all S&P 500 companies
+START_DATE = os.getenv("START_DATE", "2023-01-01")
+MODE = os.getenv("MODE", "DEMO")
 
 # Your contact information for SEC User-Agent
-USER_AGENT = "eden projetc.eden.mail@gmail.com"  # CHANGE THIS!
+USER_AGENT = os.getenv("USER_AGENT")
 
 # ─── Constants ──────────────────────────────────────────────────────────────────
 OUTPUT_DIR = "data"
