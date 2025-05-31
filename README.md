@@ -1,201 +1,254 @@
 # AInalyst
 
-**A Retrieval‑Augmented‑Generation (RAG) chatbot for SEC 10‑K filings**
+**AI-Powered Financial Document Analysis Platform**
 
-This project lets you:
+AInalyst is a sophisticated Retrieval-Augmented Generation (RAG) system that provides intelligent analysis of SEC filings using OpenAI's language models. Built with a modern tech stack, it enables users to query financial documents through natural language and receive contextual insights backed by official SEC data.
 
-1. **Download** 10‑K filings from the SEC as JSON.
-2. **Chunk** and **embed** them with OpenAI embeddings + FAISS.
-3. **Serve** a FastAPI backend to retrieve top‑K snippets and call ChatGPT.
-4. **Run** a Next.js + Tailwind CSS frontend for an interactive chat UI.
+## 🏗️ Architecture
 
----
+The platform consists of three main components:
 
-## 📁 Repository Structure
+1. **Data Pipeline**: Automated SEC filing download and processing
+2. **RAG Backend**: FastAPI service with FAISS vector search and OpenAI integration
+3. **Frontend Interface**: Next.js chat application with real-time responses
+
+## 📁 Project Structure
 
 ```
 AInalyst/
-├── .env                         # Your OpenAI API key & config
-├── download_filings.py           # Download & clean 10‑K filings as JSON
-├── incremental_chunk_embed.py   # One‑time or incremental chunk + FAISS embedder
-├── query_rag.py                 # CLI to test retrieval (embed query & show top‑K chunks)
 ├── api/
-│   └── app.py                   # FastAPI service `/ask` endpoint
-└── frontend/                    # Next.js 13 App Router + Tailwind chat UI
-    ├── src/
-    │   └── app/
-    │       ├── layout.tsx       # Root layout (imports globals.css)
-    │       └── page.tsx         # Chat UI page (fetches `/ask`)
-    ├── public/                  # Static assets
-    ├── styles/                  # globals.css + Tailwind imports
-    ├── package.json             # Frontend dependencies & scripts
-    ├── tsconfig.json            # TypeScript config
-    └── next.config.js           # Proxy `/api` to FastAPI if configured
+│   └── app.py                      # FastAPI backend with RAG endpoints
+├── frontend/                       # Next.js 15 frontend application
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── page.tsx           # Landing page with animated UI
+│   │   │   └── chat/
+│   │   │       └── page.tsx       # Chat interface
+│   │   └── components/            # Reusable UI components
+│   └── package.json               # Frontend dependencies
+├── data/                          # Downloaded SEC filings (JSON format)
+├── download_filings.py            # SEC EDGAR filing downloader
+├── incremental_chunk_embed.py     # Document chunking and embedding
+├── query_rag.py                   # CLI retrieval testing tool
+├── requirements.txt               # Python dependencies
+├── faiss_index.idx               # FAISS vector index (generated)
+└── faiss_metadata.json          # Document metadata (generated)
 ```
-
----
 
 ## ⚙️ Prerequisites
 
-* **Python 3.8+**
-* **Node 18+** + **npm**
-* **OpenAI API key** (set in `.env`)
-* **Tailwind CLI** (installed via `npm install`)
+- **Python 3.8+**
+- **Node.js 18+** and **npm**
+- **OpenAI API Key** (with access to embeddings and chat completions)
 
----
+## 🚀 Quick Start
 
-## 📝 Configuration
+### 1. Environment Setup
 
-1. Copy `.env.example` to `.env` at the repo root and set:
-
-   ```ini
-   OPENAI_API_KEY=sk-…
-   CHAT_MODEL=gpt-4.1-mini-2025-04-14           # or gpt-3.5-turbo
-   ```
-2. (Optional) In `frontend/next.config.js` you can proxy `/api` → `http://localhost:8000`.
-
----
-
-## 1) Import 10‑K Filings
-
-Prepare a CSV `companies.csv` with columns:
-
-```
-ticker,start_date,end_date
-AAPL,2020-01-01,2023-01-01
-MSFT,2021-01-01,2024-01-01
-```
-
-Run the downloader:
+Clone the repository and set up your environment:
 
 ```bash
-python download_filings.py companies.csv \
-  --user-agent "Your Name Your Project <your.email@example.com>"
+git clone https://github.com/your-username/AInalyst.git
+cd AInalyst
 ```
 
-Filing JSONs land in `data/<TICKER>/<ACCESSION>.json`.
+Create a `.env` file in the project root:
 
----
+```env
+OPENAI_API_KEY=sk-your-openai-api-key-here
+START_DATE=2023-01-01
+MODE=DEMO
+USER_AGENT="Your Name Your Project <your.email@example.com>"
+CORS_ORIGINS=http://localhost:3000
+```
 
-## 2) Build or Update the Embedding Index
+### 2. Install Dependencies
 
-Install Python requirements:
-
+**Backend:**
 ```bash
 pip install -r requirements.txt
 ```
 
-Run the incremental embedder (one‑off or repeatable):
+**Frontend:**
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+### 3. Download and Process Data
+
+Download SEC filings (starts with Apple in DEMO mode):
+
+```bash
+python download_filings.py
+```
+
+Create embeddings and build the search index:
 
 ```bash
 python incremental_chunk_embed.py
 ```
 
-* Creates/updates `faiss_index.idx` and `faiss_metadata.json`.
-* Skips chunks you’ve already embedded.
+### 4. Launch the Application
 
----
-
-## 3) Test Retrieval via CLI
-
+**Start the backend API:**
 ```bash
-python query_rag.py \
-  --query "What liquidity risks does Apple cite?" \
-  --k 5
+uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-This prints the top‑K most similar chunks and their metadata.
-
----
-
-## 4) Run the FastAPI Backend
-
-From project root:
-
-```bash
-uvicorn api.app:app --reload
-```
-
-* Endpoint: **`POST http://localhost:8000/ask`**
-* Body: `{ "query":"...", "k":5 }`
-* Response: `{ answer: string, context: [{ticker, accession, chunk_index, filing_date, score, text}] }`
-
----
-
-## 5) Run the Frontend Chat UI
-
+**Start the frontend (in a new terminal):**
 ```bash
 cd frontend
-npm install --legacy-peer-deps
 npm run dev
 ```
 
-Open **[http://localhost:3000](http://localhost:3000)** in your browser.
+Visit **http://localhost:3000** to access AInalyst.
 
-* Type a question into the input box.
-* Click “Send” to POST to `/ask`.
-* See the AI answer and source snippets.
+## 🔧 Configuration Options
 
----
+### Data Collection Modes
 
-## 🛠️ Troubleshooting
+- **DEMO**: Downloads filings for Apple only (fast setup)
+- **FULL**: Downloads all S&P 500 company filings (comprehensive dataset)
 
-* **CORS errors**: Ensure FastAPI has:
+### Environment Variables
 
-  ```python
-  from fastapi.middleware.cors import CORSMiddleware
-  app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_methods=["POST","GET"],
-    allow_headers=["*"],
-  )
-  ```
-* **Module not found**: Generate UI components via shadcn:
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | Your OpenAI API key | Required |
+| `START_DATE` | Beginning date for filing collection | `2023-01-01` |
+| `MODE` | Data collection mode (`DEMO` or `FULL`) | `DEMO` |
+| `USER_AGENT` | SEC API user agent (required) | Required |
+| `CORS_ORIGINS` | Allowed frontend origins | `http://localhost:3000` |
 
-  ```bash
-  cd frontend
-  npx shadcn@latest init
-  npx shadcn@latest add button input card scroll-area
-  ```
+## 💡 Usage Examples
 
----
+### CLI Testing
 
-## 🚀 Next Steps
+Test the retrieval system directly:
 
-* Add authentication (API keys, OAuth).
-* Persist multi-turn sessions (Redis).
-* Deploy containerized (Docker) to AWS/GCP.
-* Swap FAISS for a managed vector store.
-
----
-
-© 2025 AInalyst Open Source Project. Feel free to fork & contribute!
-
-## License
-
-Licensed under the MIT License. See the full text below or in the accompanying [LICENSE](LICENSE) file.
-
+```bash
+python query_rag.py --query "What are Apple's main revenue streams?" --k 5
 ```
-MIT License
 
-Copyright (c) 2025 Edoardo Schiatti
+### API Endpoints
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+**POST `/ask`**
+```json
+{
+  "query": "What were Tesla's R&D expenses last year?",
+  "k": 5,
+  "api_key": "sk-your-key",
+  "chat_model": "gpt-4.1-mini-2025-04-14"
+}
 ```
+
+Response:
+```json
+{
+  "answer": "Based on Tesla's financial filings...",
+  "context": [
+    {
+      "ticker": "TSLA",
+      "accession": "0000950170-23-027673",
+      "text": "Research and development expenses...",
+      "score": 0.85,
+      "filing_date": "2023-01-26",
+      "form": "10-K",
+      "url": "https://www.sec.gov/Archives/edgar/data/..."
+    }
+  ]
+}
+```
+
+## 🛠️ Technical Details
+
+### Data Processing Pipeline
+
+1. **SEC Filing Download**: Fetches 10-K, 10-Q, and Company Facts from SEC EDGAR API
+2. **Text Extraction**: Cleans HTML/XML and extracts relevant content sections
+3. **Document Chunking**: Splits documents into 1000-token chunks with 200-token overlap
+4. **Vector Embedding**: Uses OpenAI's `text-embedding-3-small` model
+5. **FAISS Indexing**: Stores embeddings for efficient similarity search
+
+### RAG Implementation
+
+- **Retrieval**: FAISS cosine similarity search finds top-K relevant chunks
+- **Augmentation**: Assembles context from retrieved documents
+- **Generation**: OpenAI chat completion with retrieved context
+
+### Frontend Features
+
+- **Animated Landing Page**: Cyberpunk-themed interface with spotlight effects
+- **Real-time Chat**: WebSocket-like experience with streaming responses
+- **Source Attribution**: Links to original SEC filings for verification
+- **Dark/Light Mode**: Adaptive theme support
+- **Responsive Design**: Mobile and desktop optimized
+
+## 📊 Deployment
+
+### Production Configuration
+
+For deployment, update environment variables:
+
+```env
+NEXT_PUBLIC_BACKEND_URL=https://your-api-domain.com
+CORS_ORIGINS=https://your-frontend-domain.com,https://your-frontend-*.vercel.app
+```
+
+### Docker Support
+
+Create a `Dockerfile` for containerized deployment:
+
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+## 🔍 Advanced Features
+
+### Custom CORS Handling
+
+The backend includes intelligent CORS management for Vercel deployments, automatically allowing preview and production URLs while maintaining security.
+
+### Incremental Updates
+
+The embedding system supports incremental updates - only new documents are processed when running `incremental_chunk_embed.py` again.
+
+### Extensible Architecture
+
+- **Multiple Document Types**: Supports 10-K, 10-Q, and Company Facts
+- **Configurable Chunking**: Adjustable chunk sizes and overlap
+- **Model Flexibility**: Easy switching between OpenAI models
+- **Vector Store Agnostic**: FAISS can be replaced with other vector databases
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **SEC EDGAR API** for providing access to financial data
+- **OpenAI** for embedding and language model capabilities
+- **FAISS** (Facebook AI Similarity Search) for efficient vector operations
+- **Vercel** for seamless frontend deployment
+
+---
+
+**Built with ❤️ for financial analysis and AI-powered insights**
+
+For questions or support, please open an issue on GitHub.
