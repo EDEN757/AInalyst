@@ -4,6 +4,7 @@
 import os
 import json
 import logging
+import re
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -15,14 +16,39 @@ import uvicorn
 
 # ─── Bring in your RAG retriever ──────────────────────────────────────────────
 from query_rag import retrieve  # returns List[dict] with keys ticker, accession, chunk_index, filing_date, score, text, form, cik, url
-# Read CORS origins from CORS_ORIGINS (comma-separated), default to localhost
-# In production, set CORS_ORIGINS="http://localhost:3000,https://your-vercel-app.vercel.app"
-origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
-# Clean up whitespace and trailing slashes from origins
-origins = [origin.strip().rstrip('/') for origin in origins if origin.strip()]
-# Also add versions with trailing slashes to be safe
-origins_with_slashes = [origin + '/' for origin in origins]
-all_origins = origins + origins_with_slashes
+# Custom CORS origin checker that handles Vercel deployment URLs
+def is_origin_allowed(origin: str) -> bool:
+    if not origin:
+        return False
+    
+    # Always allow localhost for development
+    if origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1"):
+        return True
+    
+    # Get configured origins
+    configured_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    configured_origins = [o.strip().rstrip('/') for o in configured_origins if o.strip()]
+    
+    # Check exact matches (with and without trailing slash)
+    origin_clean = origin.rstrip('/')
+    for configured in configured_origins:
+        if origin_clean == configured or origin_clean == configured + '/':
+            return True
+    
+    # Check Vercel patterns: allow any deployment URL for allowed Vercel apps
+    for configured in configured_origins:
+        if "vercel.app" in configured:
+            # Extract app name from configured origin like "https://a-inalyst.vercel.app"
+            app_name = configured.split('.')[0].split('//')[-1]
+            # Check if origin matches pattern: https://a-inalyst-*.vercel.app
+            vercel_pattern = f"https://{app_name}.*\.vercel\.app"
+            if re.match(vercel_pattern, origin):
+                return True
+    
+    return False
+
+# Use wildcard for CORS middleware but implement custom checking
+all_origins = ["*"]
 # ─── FastAPI setup ──────────────────────────────────────────────────────────
 app = FastAPI(
     title="10-K RAG Chatbot API",
@@ -46,8 +72,15 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     origin = request.headers.get("origin", "No origin")
+    origin_allowed = is_origin_allowed(origin) if origin != "No origin" else False
     logger.info(f"Request: {request.method} {request.url.path} from origin: {origin}")
-    logger.info(f"Headers: {dict(request.headers)}")
+    logger.info(f"Origin allowed: {origin_allowed}")
+    
+    # Block requests from disallowed origins
+    if request.method == "OPTIONS" and origin != "No origin" and not origin_allowed:
+        logger.warning(f"Blocked CORS request from disallowed origin: {origin}")
+        return Response(status_code=403, content="CORS: Origin not allowed")
+    
     response = await call_next(request)
     logger.info(f"Response status: {response.status_code}")
     return response
@@ -75,15 +108,21 @@ class AskResponse(BaseModel):
 
 # ─── Explicit OPTIONS handler for /ask endpoint ─────────────────────────────
 @app.options("/ask")
-async def ask_options():
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, Origin, Accept",
-        }
-    )
+async def ask_options(request: Request):
+    origin = request.headers.get("origin", "")
+    
+    if is_origin_allowed(origin):
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, Origin, Accept",
+            }
+        )
+    else:
+        logger.warning(f"OPTIONS request denied for origin: {origin}")
+        return Response(status_code=403, content="CORS: Origin not allowed")
 
 # ─── The /ask endpoint ───────────────────────────────────────────────────────
 @app.post("/ask", response_model=AskResponse)
