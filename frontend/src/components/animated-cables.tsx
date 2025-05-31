@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useMemo } from "react"
 
 interface Cable {
   id: number
@@ -14,7 +14,7 @@ export function AnimatedCables() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // Generate cable paths from different sides of the screen to the center
-  const cables: Cable[] = [
+  const cables: Cable[] = useMemo(() => [
     // Top cables
     {
       id: 1,
@@ -148,7 +148,7 @@ export function AnimatedCables() {
       duration: 3,
       color: "rgba(100, 220, 255, 0.6)",
     },
-  ]
+  ], [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -300,7 +300,7 @@ export function AnimatedCables() {
       window.removeEventListener("resize", resizeCanvas)
       cancelAnimationFrame(animationFrameId)
     }
-  }, [])
+  }, [cables])
 
   return <canvas ref={canvasRef} className="absolute inset-0 z-0 pointer-events-none" style={{ opacity: 0.8 }} />
 }

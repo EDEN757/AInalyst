@@ -5,7 +5,6 @@ import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { MessageSquare, ArrowRight, BarChart4, Database, BrainCircuit } from "lucide-react"
-import { cn } from "@/lib/utils"
 import { MotherboardBackground } from "@/components/motherboard-background"
 import { useRouter } from "next/navigation"
 
@@ -79,7 +78,6 @@ export default function Home() {
         <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
           <div className="relative">
             <motion.div
-              className="relative backdrop-blur-md bg-black/30 border border-cyan-500/50 rounded-md p-8 shadow-[0_0_30px_rgba(100,220,255,0.3)] overflow-hidden"
               animate={{
                 boxShadow: [
                   "0 0 30px rgba(100,220,255,0.3)",
@@ -89,8 +87,17 @@ export default function Home() {
               }}
               transition={{
                 duration: 3,
-                repeat: Number.POSITIVE_INFINITY,
+                repeat: Infinity,
                 repeatType: "reverse",
+              }}
+              style={{
+                backdropFilter: "blur(6px)",
+                backgroundColor: "rgba(0, 0, 0, 0.3)",
+                border: "1px solid rgba(6, 182, 212, 0.5)",
+                borderRadius: "6px",
+                padding: "2rem",
+                boxShadow: "0 0 30px rgba(100, 220, 255, 0.3)",
+                overflow: "hidden",
               }}
             >
               {/* CPU grid lines */}
@@ -181,19 +188,28 @@ export default function Home() {
 
         {/* Glassmorphism CTA button */}
         <div className="absolute bottom-20 w-full flex justify-center z-30" style={{ opacity: spotlightOpacity }}>
-          <motion.button
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.8, duration: 0.7 }}
-            onClick={handleStartChat}
-            disabled={loadingChat}
-            className={cn(
-              "group relative overflow-hidden backdrop-blur-md bg-black/30 border border-cyan-500/50 text-white px-8 py-4 rounded-md font-medium transition-all duration-300",
-              "hover:bg-black/40 hover:border-cyan-500/70 hover:shadow-[0_0_25px_rgba(100,220,255,0.5)]",
-              "focus:outline-none focus:ring-2 focus:ring-cyan-500/50",
-              "disabled:opacity-80 disabled:pointer-events-none",
-            )}
           >
+            <button
+              onClick={handleStartChat}
+              disabled={loadingChat}
+              style={{
+                position: "relative",
+                overflow: "hidden",
+                backdropFilter: "blur(6px)",
+                backgroundColor: "rgba(0, 0, 0, 0.3)",
+                border: "1px solid rgba(6, 182, 212, 0.5)",
+                color: "white",
+                padding: "1rem 2rem",
+                borderRadius: "6px",
+                fontWeight: "500",
+                transition: "all 300ms",
+                outline: "none",
+              }}
+            >
             {/* Button glow effect */}
             <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-cyan-500/0 via-cyan-500/40 to-cyan-500/0 -translate-x-[100%] group-hover:animate-glow"></span>
 
@@ -224,7 +240,8 @@ export default function Home() {
                 </>
               )}
             </span>
-          </motion.button>
+            </button>
+          </motion.div>
         </div>
 
         {/* Scroll indicator */}
@@ -258,7 +275,7 @@ export default function Home() {
             </h2>
             <p className="text-lg md:text-xl text-gray-300 max-w-3xl mx-auto">
               AInalyst uses Retrieval-Augmented Generation (RAG), powered by OpenAI models, to answer your financial
-              questions using real-time data from the SEC API. Ask about a company's performance, strategy, management,
+              questions using real-time data from the SEC API. Ask about a company&apos;s performance, strategy, management,
               or any other finance-related topic that comes to mind.
             </p>
           </div>
@@ -270,7 +287,13 @@ export default function Home() {
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
               viewport={{ once: true, margin: "-100px" }}
-              className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-8"
+              style={{
+                backgroundColor: "rgba(31, 41, 55, 0.5)",
+                backdropFilter: "blur(4px)",
+                border: "1px solid rgb(55, 65, 81)",
+                borderRadius: "8px",
+                padding: "2rem",
+              }}
             >
               <div className="bg-cyan-900/50 p-3 rounded-lg w-12 h-12 flex items-center justify-center mb-6">
                 <BarChart4 className="h-6 w-6 text-cyan-400" />
@@ -284,7 +307,13 @@ export default function Home() {
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
               viewport={{ once: true, margin: "-100px" }}
-              className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-8"
+              style={{
+                backgroundColor: "rgba(31, 41, 55, 0.5)",
+                backdropFilter: "blur(4px)",
+                border: "1px solid rgb(55, 65, 81)",
+                borderRadius: "8px",
+                padding: "2rem",
+              }}
             >
               <div className="bg-cyan-900/50 p-3 rounded-lg w-12 h-12 flex items-center justify-center mb-6">
                 <Database className="h-6 w-6 text-cyan-400" />
@@ -298,7 +327,13 @@ export default function Home() {
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
               viewport={{ once: true, margin: "-100px" }}
-              className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-8"
+              style={{
+                backgroundColor: "rgba(31, 41, 55, 0.5)",
+                backdropFilter: "blur(4px)",
+                border: "1px solid rgb(55, 65, 81)",
+                borderRadius: "8px",
+                padding: "2rem",
+              }}
             >
               <div className="bg-cyan-900/50 p-3 rounded-lg w-12 h-12 flex items-center justify-center mb-6">
                 <BrainCircuit className="h-6 w-6 text-cyan-400" />
@@ -315,7 +350,20 @@ export default function Home() {
             <button
               onClick={handleStartChat}
               disabled={loadingChat}
-              className="inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-8 py-4 rounded-md font-medium transition-colors duration-300 disabled:opacity-80"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                backgroundColor: "rgb(8, 145, 178)",
+                color: "white",
+                padding: "1rem 2rem",
+                borderRadius: "6px",
+                fontWeight: "500",
+                transition: "background-color 300ms",
+                opacity: loadingChat ? 0.8 : 1,
+                border: "none",
+                cursor: "pointer",
+              }}
             >
               <MessageSquare className="h-5 w-5" />
               <span>{loadingChat ? "Loading..." : "Start Using AInalyst"}</span>
@@ -333,7 +381,12 @@ export default function Home() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.5 }}
-            className="fixed inset-0 bg-black z-50"
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "black",
+              zIndex: 50,
+            }}
           />
         )}
       </AnimatePresence>

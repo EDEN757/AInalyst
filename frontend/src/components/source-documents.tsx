@@ -186,7 +186,6 @@ export function SourceDocuments({ context, className }: SourceDocumentsProps) {
 
       <div className="flex flex-wrap gap-2">
         {displayedSources.map((source, index) => {
-          const formattedDate = formatFilingDate(source.filing_date)
           const year = new Date(source.filing_date).getFullYear()
 
           return (
