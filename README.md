@@ -197,19 +197,75 @@ NEXT_PUBLIC_BACKEND_URL=https://your-api-domain.com
 CORS_ORIGINS=https://your-frontend-domain.com,https://your-frontend-*.vercel.app
 ```
 
-### Docker Support
+### 6. Backend Deployment on Render
 
-Create a `Dockerfile` for containerized deployment:
+#### 6.1 Create a Render Web Service
+1. Log in to Render (or create an account).
+2. Click **New → Web Service**.
+3. Connect your GitHub repo (select **EDEN757/AInalyst**).
+4. Configure the service:
+   - **Name**: e.g. ainalyst-backend
+   - **Region**: Choose a region close to you (e.g., Oregon or Frankfurt).
+   - **Root Directory**: `api` (so Render builds from AInalyst/api/).
+   - **Runtime**: Python 3.
+   - Leave **Build Command** and **Start Command** blank for now.
+5. Click **Create Web Service**. Render will provision a placeholder service awaiting your build settings.
 
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-EXPOSE 8000
-CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+#### 6.2 Set Environment Variables on Render
+1. In your new Web Service, go to **Settings → Environment**.
+2. Add the following variables (one at a time):
+
+| Key | Value | Description |
+|-----|-------|-------------|
+| `OPENAI_API_KEY` | `sk-your-openai-key` | Your private OpenAI key used for embedding generation and fallback chat completions. |
+| `START_DATE` | `2023-01-01` | Earliest filing date for download_filings.py. |
+| `MODE` | `DEMO` | Mode flag used by your ingestion scripts. |
+| `USER_AGENT` | `youremail@example.com` | Custom User-Agent when fetching SEC EDGAR filings. |
+| `CORS_ORIGINS` | `http://localhost:3000,https://a-inalyst.vercel.app` | Comma-separated list of allowed origins (development + production). |
+
+**Note:**
+- Replace `sk-your-openai-key` with your own OpenAI API key.
+- Replace `https://a-inalyst.vercel.app` with your actual Vercel frontend URL once it's live.
+
+3. Click **Save** after entering each variable.
+
+#### 6.3 Set Build & Start Commands on Render
+1. In the Web Service's **Settings**, scroll to **Build & Deploy**.
+2. Populate the **Build Command** field with:
+```bash
+pip install -r requirements.txt && \
+python download_filings.py && \
+python incremental_chunk_embed.py
 ```
+   - Installs all Python dependencies.
+   - Downloads raw SEC filings into api/data/.
+   - Builds your FAISS embeddings/index into api/embeddings/.
+
+3. Populate the **Start Command** field with:
+```bash
+uvicorn api.app:app --host 0.0.0.0 --port $PORT
+```
+   - Launches the FastAPI server via Uvicorn.
+   - `$PORT` is provided by Render at runtime.
+
+4. **Instance Type**
+   - On the free tier, select the free instance.
+   - Optionally upgrade to a paid instance for SSH access or persistent disks.
+5. Ensure **Auto-Deploy** is toggled On (default). Pushing to main will automatically trigger a rebuild.
+6. Click **Save Changes** (or **Update Service**). Render will queue a new deployment with your updated commands.
+
+### 7. Frontend Deployment on Vercel
+
+#### 7.1 Create a Vercel Project
+1. Log in to Vercel.
+2. Click **New Project**.
+3. Under **Import Git Repository**, select your GitHub account and choose **EDEN757/AInalyst**.
+4. Configure project settings:
+   - **Root Directory**: `frontend` (so Vercel builds from AInalyst/frontend/).
+   - **Framework Preset**: Should auto-detect Next.js.
+   - **Build Command**: `npm run build` (default).
+   - **Output Directory**: `.next` (default).
+5. Click **Deploy**. Vercel will install dependencies and run npm run build in the frontend/ folder.
 
 ## 🔍 Advanced Features
 
