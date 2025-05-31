@@ -17,8 +17,11 @@ from query_rag import retrieve  # returns List[dict] with keys ticker, accession
 # Read CORS origins from CORS_ORIGINS (comma-separated), default to localhost
 # In production, set CORS_ORIGINS="http://localhost:3000,https://your-vercel-app.vercel.app"
 origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
-# Clean up whitespace from origins
-origins = [origin.strip() for origin in origins if origin.strip()]
+# Clean up whitespace and trailing slashes from origins
+origins = [origin.strip().rstrip('/') for origin in origins if origin.strip()]
+# Also add versions with trailing slashes to be safe
+origins_with_slashes = [origin + '/' for origin in origins]
+all_origins = origins + origins_with_slashes
 # ─── FastAPI setup ──────────────────────────────────────────────────────────
 app = FastAPI(
     title="10-K RAG Chatbot API",
@@ -29,10 +32,10 @@ app = FastAPI(
 # Log CORS configuration for debugging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.info(f"CORS allowed origins: {origins}")
+logger.info(f"CORS allowed origins: {all_origins}")
 app.add_middleware(
   CORSMiddleware,
-  allow_origins=origins,  # Only allow specific origins
+  allow_origins=all_origins,  # Allow both with and without trailing slashes
   allow_methods=["POST", "GET", "OPTIONS"],
   allow_headers=["Content-Type", "Authorization"],
   allow_credentials=False,
