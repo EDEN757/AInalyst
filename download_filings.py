@@ -70,16 +70,46 @@ def get_sp500_tickers() -> list[str]:
         r = requests.get(url, headers=headers)
         r.raise_for_status()
         
-        # Parse table - this is a simple approach
-        # In production, you might want to use pandas or beautifulsoup
-        import re
-        pattern = r'<a href="/wiki/[^"]+"\s+title="[^"]+">([A-Z]{1,5})</a>'
-        tickers = re.findall(pattern, r.text)
+        # Try BeautifulSoup first for better parsing
+        if BeautifulSoup:
+            soup = BeautifulSoup(r.text, 'html.parser')
+            
+            # Find the main S&P 500 table
+            table = soup.find('table', {'id': 'constituents'})
+            if not table:
+                table = soup.find('table', class_='wikitable sortable')
+            
+            tickers = []
+            if table:
+                rows = table.find_all('tr')[1:]  # Skip header
+                for row in rows:
+                    cells = row.find_all(['td', 'th'])
+                    if cells:
+                        # First cell should contain the ticker
+                        ticker_text = cells[0].get_text(strip=True)
+                        # Clean up ticker (remove any extra characters)
+                        ticker = re.sub(r'[^A-Z.]', '', ticker_text.upper())
+                        if ticker and len(ticker) <= 5:
+                            tickers.append(ticker)
+        else:
+            # Fallback to regex approach with better patterns
+            patterns = [
+                r'<td[^>]*>([A-Z]{1,5}(?:\.[A-Z])?)</td>',
+                r'>([A-Z]{2,5})</a></td>',
+                r'<td[^>]*><a[^>]*>([A-Z]{1,5}(?:\.[A-Z])?)</a></td>'
+            ]
+            
+            tickers = []
+            for pattern in patterns:
+                matches = re.findall(pattern, r.text)
+                if matches:
+                    tickers.extend(matches)
+                    
+            tickers = list(set(tickers))
+            tickers = [t for t in tickers if len(t) <= 5 and re.match(r'^[A-Z]+(\.[A-Z])?$', t)]
         
-        # Remove duplicates and clean up
+        # Remove duplicates
         tickers = list(set(tickers))
-        # Filter out common false positives
-        tickers = [t for t in tickers if len(t) <= 5 and t.isalpha()]
         
         logging.info(f"Found {len(tickers)} S&P 500 tickers")
         return tickers[:500]  # Limit to 500 to be safe
