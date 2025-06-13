@@ -29,7 +29,6 @@ AInalyst/
 ├── data/                          # Downloaded SEC filings (JSON format)
 ├── download_filings.py            # SEC EDGAR filing downloader
 ├── incremental_chunk_embed.py     # Document chunking and embedding
-├── startup.py                     # Post-deployment data processing script
 ├── query_rag.py                   # CLI retrieval testing tool
 ├── requirements.txt               # Python dependencies
 ├── faiss_index.idx               # FAISS vector index (generated)
@@ -234,10 +233,13 @@ CORS_ORIGINS=https://your-frontend-domain.com,https://your-frontend-*.vercel.app
 1. In the Web Service's **Settings**, scroll to **Build & Deploy**.
 2. Populate the **Build Command** field with:
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt && \
+python download_filings.py && \
+python incremental_chunk_embed.py
 ```
-   - Installs all Python dependencies only.
-   - Data download and embedding creation now happens after deployment to avoid build timeouts.
+   - Installs all Python dependencies.
+   - Downloads raw SEC filings into api/data/.
+   - Builds your FAISS embeddings/index into api/embeddings/.
 
 3. Populate the **Start Command** field with:
 ```bash
@@ -245,29 +247,12 @@ uvicorn api.app:app --host 0.0.0.0 --port $PORT
 ```
    - Launches the FastAPI server via Uvicorn.
    - `$PORT` is provided by Render at runtime.
-   - The server automatically triggers data download and embedding creation on startup via `startup.py`.
 
 4. **Instance Type**
    - On the free tier, select the free instance.
    - Optionally upgrade to a paid instance for SSH access or persistent disks.
 5. Ensure **Auto-Deploy** is toggled On (default). Pushing to main will automatically trigger a rebuild.
 6. Click **Save Changes** (or **Update Service**). Render will queue a new deployment with your updated commands.
-
-#### 6.4 How the New Deployment Process Works
-The deployment process has been optimized to prevent build timeouts:
-
-1. **Build Phase**: Only installs Python dependencies (fast, ~1-2 minutes)
-2. **Startup Phase**: Server starts immediately and begins serving requests
-3. **Background Processing**: `startup.py` runs in background to:
-   - Download SEC filings (only new/missing files)
-   - Create FAISS embeddings (only for new documents)
-   - Complete without affecting running server
-
-This approach ensures:
-- ✅ **Fast deployments** - No build timeouts
-- ✅ **Immediate availability** - Server starts serving requests right away
-- ✅ **Incremental updates** - Only processes new data
-- ✅ **Zero downtime** - Updates happen in background
 
 ### 7. Frontend Deployment on Vercel
 
@@ -281,41 +266,6 @@ This approach ensures:
    - **Build Command**: `npm run build` (default).
    - **Output Directory**: `.next` (default).
 5. Click **Deploy**. Vercel will install dependencies and run npm run build in the frontend/ folder.
-
-### 8. Automated Data Updates
-
-#### 8.1 Setting Up Automatic Updates (Cronjob)
-
-To keep your SEC filings data current, set up a cronjob that runs daily or weekly:
-
-```bash
-# Daily update at 2 AM
-0 2 * * * cd /path/to/AInalyst && python startup.py
-
-# Weekly update on Sundays at 2 AM  
-0 2 * * 0 cd /path/to/AInalyst && python startup.py
-```
-
-#### 8.2 Why Use startup.py for Updates
-
-The `startup.py` script is ideal for automated updates because it:
-
-- **Handles both operations**: Downloads new filings AND creates embeddings
-- **Smart incremental processing**: Only processes new/missing data
-- **Safe concurrent execution**: Can run while the web app is serving requests
-- **Zero downtime**: Updates happen in background without affecting users
-- **Consistent logic**: Uses the same process as initial deployment
-
-#### 8.3 Alternative Update Methods
-
-If you prefer to run scripts separately:
-
-```bash
-# Download new filings and update embeddings separately
-0 2 * * * cd /path/to/AInalyst && python download_filings.py && python incremental_chunk_embed.py
-```
-
-Both approaches are safe and will only process new data, ensuring efficient updates without disrupting the running application.
 
 ## 🔍 Advanced Features
 

@@ -14,13 +14,6 @@ load_dotenv()
 import openai
 import uvicorn
 
-# Import startup script for data processing
-try:
-    from startup import start_data_processing
-except ImportError:
-    def start_data_processing():
-        pass
-
 # ─── Bring in your RAG retriever ──────────────────────────────────────────────
 from query_rag import retrieve  # returns List[dict] with keys ticker, accession, chunk_index, filing_date, score, text, form, cik, url
 # Custom CORS origin checker that handles Vercel deployment URLs
@@ -67,9 +60,6 @@ app = FastAPI(
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.info(f"CORS allowed origins: {all_origins}")
-
-# Start data processing in background on startup
-start_data_processing()
 app.add_middleware(
   CORSMiddleware,
   allow_origins=all_origins,  # Allow both with and without trailing slashes
