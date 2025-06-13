@@ -233,13 +233,9 @@ CORS_ORIGINS=https://your-frontend-domain.com,https://your-frontend-*.vercel.app
 1. In the Web Service's **Settings**, scroll to **Build & Deploy**.
 2. Populate the **Build Command** field with:
 ```bash
-pip install -r requirements.txt && \
-python download_filings.py && \
-python incremental_chunk_embed.py
+pip install -r requirements.txt
 ```
    - Installs all Python dependencies.
-   - Downloads raw SEC filings into api/data/.
-   - Builds your FAISS embeddings/index into api/embeddings/.
 
 3. Populate the **Start Command** field with:
 ```bash
@@ -247,6 +243,36 @@ uvicorn api.app:app --host 0.0.0.0 --port $PORT
 ```
    - Launches the FastAPI server via Uvicorn.
    - `$PORT` is provided by Render at runtime.
+
+#### 6.4 Data Processing Scripts
+After deployment, the following scripts need to be run manually from the shell:
+
+1. **Download SEC filings:**
+```bash
+python download_filings.py
+```
+
+2. **Create embeddings and build search index:**
+```bash
+python incremental_chunk_embed.py
+```
+
+#### 6.5 Automated Data Updates (Cron Jobs)
+To keep the data fresh, set up cron jobs to run the data processing scripts periodically:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add the following lines to run daily at 2 AM
+0 2 * * * cd /path/to/AInalyst && python download_filings.py
+30 2 * * * cd /path/to/AInalyst && python incremental_chunk_embed.py
+```
+
+This ensures:
+- New SEC filings are downloaded daily
+- Embeddings are updated with fresh data
+- The search index stays current with the latest financial documents
 
 4. **Instance Type**
    - On the free tier, select the free instance.
